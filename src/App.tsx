@@ -54,6 +54,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!user || location.pathname !== "/") return;
+    setHomeRedirect(null);
     (async () => {
       const { data: orgData } = await supabase
         .from("organization_members")
