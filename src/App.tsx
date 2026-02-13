@@ -31,6 +31,7 @@ import { CatalogPage } from "@/pages/shop/CatalogPage";
 import { OrderDetailPage } from "@/pages/order/OrderDetailPage";
 import { TokoPage } from "@/pages/settings/TokoPage";
 import { DaftarPelanggan } from "@/pages/DaftarPelanggan";
+import { AdminDashboard } from "@/pages/admin/AdminDashboard";
 import { InstallPWA } from "@/components/InstallPWA";
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
@@ -56,6 +57,11 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     if (!user || location.pathname !== "/") return;
     setHomeRedirect(null);
     (async () => {
+      const { data: isOwner } = await supabase.rpc("is_saas_owner");
+      if (isOwner === true) {
+        setHomeRedirect("/admin");
+        return;
+      }
       const { data: orgData } = await supabase
         .from("organization_members")
         .select("organization_id")
@@ -89,6 +95,9 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   if (!user && location.pathname.startsWith("/org")) {
+    return <Navigate to="/login" replace />;
+  }
+  if (!user && location.pathname.startsWith("/admin")) {
     return <Navigate to="/login" replace />;
   }
   if (!user && location.pathname === "/onboarding") {
@@ -125,6 +134,7 @@ export default function App() {
         <Route path="/katalog/:orgId" element={<CatalogPage />} />
         <Route path="/daftar-pelanggan" element={<DaftarPelanggan />} />
         <Route path="/order/:token" element={<OrderDetailPage />} />
+        <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/org/:orgId" element={<OrgLayout />}>
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
