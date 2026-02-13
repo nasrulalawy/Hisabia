@@ -14,23 +14,32 @@ export function Onboarding() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         navigate("/login", { replace: true });
         return;
       }
-      supabase
+      const { data: orgData } = await supabase
         .from("organization_members")
         .select("organization_id")
         .eq("user_id", user.id)
         .limit(1)
-        .single()
-        .then(({ data }) => {
-          if (data?.organization_id) {
-            navigate(`/org/${data.organization_id}/dashboard`, { replace: true });
-          }
-        });
-    });
+        .single();
+      if (orgData?.organization_id) {
+        navigate(`/org/${orgData.organization_id}/dashboard`, { replace: true });
+        return;
+      }
+      const { data: customerData } = await supabase
+        .from("customers")
+        .select("organization_id")
+        .eq("user_id", user.id)
+        .limit(1)
+        .maybeSingle();
+      if (customerData?.organization_id) {
+        navigate(`/katalog/${customerData.organization_id}`, { replace: true });
+      }
+    })();
   }, [navigate]);
 
   async function handleSubmit(e: React.FormEvent) {

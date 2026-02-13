@@ -57,4 +57,27 @@ Proyek ini **tidak memakai server API**. Cocok untuk deploy frontend-only di Ver
    - `VITE_SUPABASE_ANON_KEY`
 3. Deploy. Build menjalankan `npm run build` (Vite). Output: static site di `dist/`.
 
-Fitur yang berjalan: buat usaha, undangan pelanggan (daftar & link akun), katalog, shop by link, order. **Fitur WhatsApp** (kirim notifikasi/peringat hutang) tidak tersedia karena membutuhkan server Node.js; tombol/keterangan di app akan menampilkan pesan "tidak tersedia".
+Fitur yang berjalan: buat usaha, undangan pelanggan (daftar & link akun), katalog, shop by link, order, pembayaran subscription via Midtrans Snap.
+
+### Pembayaran Subscription (Midtrans) — Tanpa Server
+
+Pembayaran subscription memakai **Supabase Edge Functions**, jadi **tidak perlu server** (cocok untuk Vercel static).
+
+1. **Deploy Edge Functions:**
+   ```bash
+   supabase functions deploy create-subscription-order
+   supabase functions deploy midtrans-webhook --no-verify-jwt
+   ```
+
+2. **Set secrets di Supabase:**
+   ```bash
+   supabase secrets set MIDTRANS_SERVER_KEY=your_server_key
+   supabase secrets set MIDTRANS_IS_PRODUCTION=true
+   ```
+
+3. **Env di Vercel / .env.local:**
+   - `VITE_MIDTRANS_CLIENT_KEY` — Client Key
+   - `VITE_MIDTRANS_IS_PRODUCTION` — `true` untuk production
+
+4. **Webhook Midtrans:** Di [Midtrans Dashboard](https://dashboard.midtrans.com) → Settings → Configuration → Notification URL:
+   `https://[PROJECT_REF].supabase.co/functions/v1/midtrans-webhook`

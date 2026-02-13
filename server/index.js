@@ -579,26 +579,11 @@ app.post("/api/katalog/:orgId/order", async (req, res) => {
       });
     }
 
-    let sentViaWa = false;
-    if (waModule && outlet.id) {
-      const { data: cust } = await admin.from("customers").select("phone").eq("id", customerId).single();
-      if (cust?.phone) {
-        try {
-          const msg = `Halo, terima kasih sudah memesan! Detail pesanan: ${orderDetailUrl}`;
-          await waModule.sendMessage(outlet.id, cust.phone, msg);
-          sentViaWa = true;
-        } catch (e) {
-          console.error("WA send order notify:", e.message);
-        }
-      }
-    }
-
     return res.json({
       orderId: order.id,
       orderToken: order.order_token,
       orderDetailUrl,
-      whatsappPhone: sentViaWa ? null : whatsappPhone,
-      sentViaWa,
+      whatsappPhone,
       total,
     });
   } catch (err) {
@@ -782,26 +767,11 @@ app.post("/api/shop/:token/order", async (req, res) => {
     });
   }
 
-  let sentViaWa = false;
-  if (waModule && outlet.id) {
-    const { data: cust } = await admin.from("customers").select("phone").eq("id", customerId).single();
-    if (cust?.phone) {
-      try {
-        const msg = `Halo, terima kasih sudah memesan! Detail pesanan: ${orderDetailUrl}`;
-        await waModule.sendMessage(outlet.id, cust.phone, msg);
-        sentViaWa = true;
-      } catch (e) {
-        console.error("WA send order notify:", e.message);
-      }
-    }
-  }
-
   return res.json({
     orderId: order.id,
     orderToken: order.order_token,
     orderDetailUrl,
-    whatsappPhone: sentViaWa ? null : whatsappPhone,
-    sentViaWa,
+    whatsappPhone,
     total,
   });
 });
@@ -865,88 +835,6 @@ app.get("/api/order/:token", async (req, res) => {
       quantity: i.quantity,
     })),
   });
-});
-
-// --- WhatsApp Web API (auth required) ---
-async function verifyOutletAccess(authToken, outletId) {
-  if (!authToken) return null;
-  const supabaseAuth = createClient(supabaseUrl, supabaseAnon).auth;
-  const { data: { user }, error } = await supabaseAuth.getUser(authToken);
-  if (error || !user) return null;
-  const { data: members } = await createClient(supabaseUrl, supabaseAnon)
-    .from("organization_members")
-    .select("organization_id")
-    .eq("user_id", user.id);
-  const orgIds = (members || []).map((m) => m.organization_id);
-  if (!admin) return null;
-  const { data: outlet } = await admin
-    .from("outlets")
-    .select("id, organization_id")
-    .eq("id", outletId)
-    .in("organization_id", orgIds)
-    .single();
-  return outlet;
-}
-
-let waModule = null;
-try {
-  waModule = await import("./wa-clients.js");
-} catch (e) {
-  console.warn("WA module load failed:", e.message);
-}
-
-app.get("/api/wa/status", (req, res) => {
-  res.json({ available: !!waModule });
-});
-
-app.get("/api/wa/:outletId/status", async (req, res) => {
-  const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-  const outlet = await verifyOutletAccess(token, req.params.outletId);
-  if (!outlet) return res.status(403).json({ error: "Akses ditolak" });
-  if (!waModule) return res.json({ status: "unavailable" });
-  const status = waModule.getStatus(outlet.id);
-  res.json(status);
-});
-
-app.post("/api/wa/:outletId/connect", async (req, res) => {
-  const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-  const outlet = await verifyOutletAccess(token, req.params.outletId);
-  if (!outlet) return res.status(403).json({ error: "Akses ditolak" });
-  if (!waModule) return res.status(503).json({ error: "WhatsApp tidak tersedia" });
-  try {
-    const status = await waModule.connect(outlet.id);
-    res.json(status);
-  } catch (e) {
-    res.status(500).json({ error: e.message || "Gagal koneksi" });
-  }
-});
-
-app.post("/api/wa/:outletId/disconnect", async (req, res) => {
-  const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-  const outlet = await verifyOutletAccess(token, req.params.outletId);
-  if (!outlet) return res.status(403).json({ error: "Akses ditolak" });
-  if (!waModule) return res.status(503).json({ error: "WhatsApp tidak tersedia" });
-  await waModule.disconnect(outlet.id);
-  res.json({ status: "disconnected" });
-});
-
-app.post("/api/wa/:outletId/send", async (req, res) => {
-  const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-  const outlet = await verifyOutletAccess(token, req.params.outletId);
-  if (!outlet) return res.status(403).json({ error: "Akses ditolak" });
-  if (!waModule) return res.status(503).json({ error: "WhatsApp tidak tersedia" });
-  const { phone, message } = req.body || {};
-  if (!phone || !message) return res.status(400).json({ error: "phone dan message wajib" });
-  try {
-    await waModule.sendMessage(outlet.id, phone, message);
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message || "Gagal kirim" });
-  }
 });
 
 // Jalan sebagai server hanya di luar Vercel (lokal / Railway / Render)

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/Input";
 export function TokoPage() {
   const { orgId } = useOrg();
   const [phone, setPhone] = useState("");
+  const [catalogSlug, setCatalogSlug] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -17,10 +18,13 @@ export function TokoPage() {
     async function load() {
       const { data } = await supabase
         .from("organizations")
-        .select("phone")
+        .select("phone, catalog_slug")
         .eq("id", orgId)
         .single();
-      if (!cancelled) setPhone(data?.phone ?? "");
+      if (!cancelled) {
+        setPhone(data?.phone ?? "");
+        setCatalogSlug(data?.catalog_slug ?? "");
+      }
       setLoading(false);
     }
     load();
@@ -30,14 +34,26 @@ export function TokoPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!orgId) return;
+    const slug = catalogSlug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || null;
     setSaving(true);
     setError(null);
     const { error: err } = await supabase
       .from("organizations")
-      .update({ phone: phone.trim() || null, updated_at: new Date().toISOString() })
+      .update({
+        phone: phone.trim() || null,
+        catalog_slug: slug,
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", orgId);
     setSaving(false);
     if (err) setError(err.message);
+    else if (slug) setCatalogSlug(slug);
+  }
+
+  function getCatalogUrl() {
+    const slug = catalogSlug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+    const path = slug ? slug : orgId ?? "";
+    return path ? `${window.location.origin}/katalog/${path}` : "";
   }
 
   if (loading) {
@@ -62,6 +78,24 @@ export function TokoPage() {
         </div>
       )}
       <form onSubmit={handleSubmit} className="max-w-md space-y-4">
+        <div>
+          <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
+            Slug URL Katalog
+          </label>
+          <Input
+            value={catalogSlug}
+            onChange={(e) => setCatalogSlug(e.target.value)}
+            placeholder="toko-saya (kosong = pakai ID)"
+          />
+          <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+            Atur URL katalog agar mudah dibagikan. Contoh: toko-saya → /katalog/toko-saya
+          </p>
+          {getCatalogUrl() && (
+            <p className="mt-1 text-xs font-medium text-[var(--primary)]">
+              Link: {getCatalogUrl()}
+            </p>
+          )}
+        </div>
         <div>
           <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
             Nomor WA Toko

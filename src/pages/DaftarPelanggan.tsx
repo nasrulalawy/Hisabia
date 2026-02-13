@@ -9,7 +9,8 @@ interface InviteInfo {
   email: string;
   orgName: string;
   catalogUrl: string;
-  orgId: string;
+  catalogPath?: string;
+  orgId?: string;
 }
 
 export function DaftarPelanggan() {
@@ -48,7 +49,12 @@ export function DaftarPelanggan() {
           setError(res.error);
           setInvite(null);
         } else if (res && "email" in res) {
-          setInvite({ ...res, catalogUrl: `${window.location.origin}/katalog/${res.orgId}` });
+          const path = (res as { catalogPath?: string; orgId?: string }).catalogPath
+            || (res as { catalogPath?: string; orgId?: string }).orgId;
+          setInvite({
+            ...res,
+            catalogUrl: path ? `${window.location.origin}/katalog/${path}` : "",
+          });
           setError(null);
         }
       } finally {
@@ -67,7 +73,7 @@ export function DaftarPelanggan() {
       setLinking(true);
       const { data: linkData, error: linkErr } = await supabase.rpc("link_invite_token", { p_token: token });
       setLinking(false);
-      const res = linkData as { linked?: boolean; orgId?: string; error?: string } | null;
+      const res = linkData as { linked?: boolean; catalogPath?: string; orgId?: string; error?: string } | null;
       if (linkErr) {
         setError(linkErr.message);
         return;
@@ -76,8 +82,9 @@ export function DaftarPelanggan() {
         setError(res.error);
         return;
       }
-      if (res?.linked && res?.orgId) {
-        navigate(`/katalog/${res.orgId}`, { replace: true });
+      const path = res?.catalogPath || res?.orgId;
+      if (res?.linked && path) {
+        navigate(`/katalog/${path}`, { replace: true });
       }
     };
     linkIfLoggedIn();
@@ -115,7 +122,7 @@ export function DaftarPelanggan() {
     }
     const { data: linkData, error: linkErr } = await supabase.rpc("link_invite_token", { p_token: token });
     setSubmitLoading(false);
-    const res = linkData as { linked?: boolean; orgId?: string; error?: string } | null;
+    const res = linkData as { linked?: boolean; catalogPath?: string; orgId?: string; error?: string } | null;
     if (linkErr) {
       setError(linkErr.message);
       return;
@@ -124,8 +131,9 @@ export function DaftarPelanggan() {
       setError(res.error);
       return;
     }
-    if (res?.linked && res?.orgId) {
-      navigate(`/katalog/${res.orgId}`, { replace: true });
+    const path = res?.catalogPath || res?.orgId;
+    if (res?.linked && path) {
+      navigate(`/katalog/${path}`, { replace: true });
     }
   }
 

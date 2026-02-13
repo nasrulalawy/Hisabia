@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
 import { formatIdr, formatDate } from "@/lib/utils";
@@ -6,6 +7,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import type { SubscriptionPlan } from "@/lib/database.types";
+
+const MIDTRANS_SNAP_URL = import.meta.env.VITE_MIDTRANS_IS_PRODUCTION === "true"
+  ? "https://app.midtrans.com/snap/snap.js"
+  : "https://app.sandbox.midtrans.com/snap/snap.js";
 
 interface SubscriptionWithPlan {
   id: string;
@@ -17,9 +22,11 @@ interface SubscriptionWithPlan {
 
 export function SubscriptionPage() {
   const { orgId } = useOrg();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [subscription, setSubscription] = useState<SubscriptionWithPlan | null>(null);
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+  const [payLoading, setPayLoading] = useState<string | null>(null);
   const [outletCount, setOutletCount] = useState(0);
   const [memberCount, setMemberCount] = useState(0);
 
@@ -55,6 +62,74 @@ export function SubscriptionPage() {
   const periodEnd = subscription?.current_period_end ? new Date(subscription.current_period_end) : null;
   const trialExpired = !!(isTrialing && periodEnd && periodEnd < new Date());
 
+  const clientKey = import.meta.env.VITE_MIDTRANS_CLIENT_KEY;
+
+  const loadSubscription = useCallback(() => {
+    if (!orgId) return;
+    supabase
+      .from("subscriptions")
+      .select("*, subscription_plans(*)")
+      .eq("organization_id", orgId)
+      .maybeSingle()
+      .then(({ data }) => setSubscription(data as SubscriptionWithPlan | null));
+  }, [orgId]);
+
+  async function handlePay(plan: SubscriptionPlan) {
+    if (!orgId || !clientKey) return;
+    const amount = Number(plan.price_monthly) || 0;
+    if (amount < 1) return;
+    setPayLoading(plan.id);
+    try {
+      const { data, error } = await supabase.functions.invoke("create-subscription-order", {
+        body: { organization_id: orgId, plan_id: plan.id },
+      });
+      if (error) throw new Error(error.message || "Gagal membuat order");
+      const json = data as { snapToken?: string; error?: string };
+      if (json?.error) throw new Error(json.error);
+      const snapToken = json?.snapToken;
+      if (!snapToken) throw new Error("Token tidak diterima");
+
+      if (typeof (window as unknown as { snap?: { pay: (t: string, o?: object) => void } }).snap?.pay === "function") {
+        (window as unknown as { snap: { pay: (t: string, o?: object) => void } }).snap.pay(snapToken, {
+          onSuccess: () => {
+            loadSubscription();
+            setPayLoading(null);
+            navigate(`/org/${orgId}/subscription/success`, {
+              state: { planName: plan.name, amount: Number(plan.price_monthly) },
+            });
+          },
+          onPending: () => {
+            loadSubscription();
+            setPayLoading(null);
+            navigate(`/org/${orgId}/subscription/success`, {
+              state: { planName: plan.name, amount: Number(plan.price_monthly), pending: true },
+            });
+          },
+          onError: () => {
+            setPayLoading(null);
+          },
+          onClose: () => setPayLoading(null),
+        });
+      } else {
+        window.location.href = `https://app.midtrans.com/snap/v2/vtweb/${snapToken}`;
+        setPayLoading(null);
+      }
+    } catch (err) {
+      alert((err as Error).message);
+      setPayLoading(null);
+    }
+  }
+
+  useEffect(() => {
+    if (!clientKey) return;
+    if (document.querySelector('script[src*="midtrans.com/snap"]')) return;
+    const s = document.createElement("script");
+    s.src = MIDTRANS_SNAP_URL;
+    s.setAttribute("data-client-key", clientKey);
+    s.async = true;
+    document.head.appendChild(s);
+  }, [clientKey]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -75,11 +150,20 @@ export function SubscriptionPage() {
           <CardContent className="py-6">
             <p className="text-lg font-semibold text-amber-800">Masa trial 14 hari telah berakhir</p>
             <p className="mt-2 text-sm text-amber-700">
-              Untuk melanjutkan menggunakan Hisabia, upgrade ke paket Pro minimal (Rp 99.000/bulan).
+              Untuk melanjutkan menggunakan Hisabia, berlangganan paket Basic (Rp 99.000/bulan).
             </p>
             <p className="mt-4 text-sm text-amber-600">
-              Paket Basic gratis hanya berlaku 14 hari untuk akun baru. Setelah itu wajib upgrade.
+              Aplikasi gratis hanya selama 14 hari trial. Setelah itu wajib berlangganan.
             </p>
+            {plans.length > 0 && (
+              <Button
+                className="mt-4"
+                onClick={() => handlePay(plans[0])}
+                disabled={!!payLoading || Number(plans[0]?.price_monthly) < 1}
+              >
+                {payLoading ? "Memproses..." : "Bayar Paket Basic"}
+              </Button>
+            )}
           </CardContent>
         </Card>
       )}
@@ -202,9 +286,15 @@ export function SubscriptionPage() {
                       ))}
                     </ul>
                   )}
-                  {!isCurrent && (
-                    <Button variant="outline" size="sm" className="w-full" disabled>
-                      Upgrade (coming soon)
+                  {!isCurrent && Number(plan.price_monthly) > 0 && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      className="w-full"
+                      disabled={!!payLoading}
+                      onClick={() => handlePay(plan)}
+                    >
+                      {payLoading === plan.id ? "Memproses..." : "Bayar Sekarang"}
                     </Button>
                   )}
                 </CardContent>

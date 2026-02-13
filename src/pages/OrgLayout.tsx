@@ -49,7 +49,17 @@ export function OrgLayout() {
         .eq("user_id", u.id)
         .single();
       if (!membership) {
-        navigate("/onboarding", { replace: true });
+        const { data: customerOrg } = await supabase
+          .from("customers")
+          .select("organization_id")
+          .eq("user_id", u.id)
+          .limit(1)
+          .maybeSingle();
+        if (customerOrg?.organization_id) {
+          navigate(`/katalog/${customerOrg.organization_id}`, { replace: true });
+        } else {
+          navigate("/onboarding", { replace: true });
+        }
         return;
       }
       setRole(roleLabels[membership.role] ?? membership.role);

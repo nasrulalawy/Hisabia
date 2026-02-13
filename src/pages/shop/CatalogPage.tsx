@@ -44,9 +44,12 @@ interface CartItem {
   qty: number;
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function CatalogPage() {
-  const { orgId } = useParams<{ orgId: string }>();
+  const { orgId: param } = useParams<{ orgId: string }>();
   const navigate = useNavigate();
+  const [resolvedOrgId, setResolvedOrgId] = useState<string | null>(null);
   const [orgName, setOrgName] = useState<string | null>(null);
   const [products, setProducts] = useState<CatalogProduct[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -66,7 +69,7 @@ export function CatalogPage() {
   const [successOrderId, setSuccessOrderId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!orgId) {
+    if (!param) {
       setError("Link tidak valid");
       setLoading(false);
       return;
@@ -74,20 +77,21 @@ export function CatalogPage() {
     const run = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        navigate("/login", { state: { from: `/katalog/${orgId}` } });
+        navigate("/login", { state: { from: `/katalog/${param}` } });
         return;
       }
       try {
-        const { data: org, error: orgErr } = await supabase
-          .from("organizations")
-          .select("id, name, catalog_public")
-          .eq("id", orgId)
-          .single();
+        // Resolve param: UUID = org id, else = catalog_slug
+        const isUuid = UUID_REGEX.test(param);
+        const { data: org, error: orgErr } = isUuid
+          ? await supabase.from("organizations").select("id, name, catalog_public").eq("id", param).single()
+          : await supabase.from("organizations").select("id, name, catalog_public").eq("catalog_slug", param).single();
         if (orgErr || !org) {
           setError("Toko tidak ditemukan");
           setLoading(false);
           return;
         }
+        setResolvedOrgId(org.id);
         if (!org.catalog_public) {
           setError("Katalog toko ini tidak tersedia");
           setLoading(false);
@@ -98,7 +102,7 @@ export function CatalogPage() {
         const { data: productsData, error: prodErr } = await supabase
           .from("products")
           .select("id, name, stock, selling_price, is_available, default_unit_id, category_id, image_url")
-          .eq("organization_id", orgId)
+          .eq("organization_id", org.id)
           .eq("is_available", true)
           .order("name");
         if (prodErr) throw prodErr;
@@ -122,7 +126,7 @@ export function CatalogPage() {
           supabase
             .from("menu_categories")
             .select("id, name, sort_order")
-            .eq("organization_id", orgId)
+            .eq("organization_id", org.id)
             .order("sort_order")
             .order("name"),
         ]);
@@ -134,7 +138,7 @@ export function CatalogPage() {
         const { data: custData } = await supabase
           .from("customers")
           .select("id")
-          .eq("organization_id", orgId)
+          .eq("organization_id", org.id)
           .eq("user_id", user.id)
           .maybeSingle();
         const customerId = custData?.id ?? null;
@@ -209,7 +213,7 @@ export function CatalogPage() {
       }
     };
     run();
-  }, [orgId, navigate]);
+  }, [param, navigate]);
 
   const filteredProducts = products.filter((p) => {
     const matchCat = !selectedCategory || p.category_id === selectedCategory;
@@ -282,7 +286,7 @@ export function CatalogPage() {
   }
 
   async function checkout() {
-    if (!orgId || cart.length === 0) return;
+    if (!resolvedOrgId || cart.length === 0) return;
     setCheckoutLoading(true);
     try {
       const items = cart.map((c) => ({
@@ -291,7 +295,7 @@ export function CatalogPage() {
         quantity: c.qty,
       }));
       const { data, error: rpcError } = await supabase.rpc("create_katalog_order", {
-        p_org_id: orgId,
+        p_org_id: resolvedOrgId,
         p_items: items,
         p_notes: notes.trim() || null,
         p_discount: 0,

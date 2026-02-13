@@ -25,11 +25,11 @@ import { OutletsPage } from "@/pages/crud/OutletsPage";
 import { PosPage } from "@/pages/pos/PosPage";
 import { LaporanPage } from "@/pages/reports/LaporanPage";
 import { SubscriptionPage } from "@/pages/subscription/SubscriptionPage";
+import { PaymentSuccessPage } from "@/pages/subscription/PaymentSuccessPage";
 import { ShopPage } from "@/pages/shop/ShopPage";
 import { CatalogPage } from "@/pages/shop/CatalogPage";
 import { OrderDetailPage } from "@/pages/order/OrderDetailPage";
 import { TokoPage } from "@/pages/settings/TokoPage";
-import { WhatsAppPage } from "@/pages/settings/WhatsAppPage";
 import { DaftarPelanggan } from "@/pages/DaftarPelanggan";
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
@@ -53,15 +53,29 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!user || location.pathname !== "/") return;
-    supabase
-      .from("organization_members")
-      .select("organization_id")
-      .eq("user_id", user.id)
-      .limit(1)
-      .single()
-      .then(({ data }) => {
-        setHomeRedirect(data?.organization_id ? `/org/${data.organization_id}/dashboard` : "/onboarding");
-      });
+    (async () => {
+      const { data: orgData } = await supabase
+        .from("organization_members")
+        .select("organization_id")
+        .eq("user_id", user.id)
+        .limit(1)
+        .single();
+      if (orgData?.organization_id) {
+        setHomeRedirect(`/org/${orgData.organization_id}/dashboard`);
+        return;
+      }
+      const { data: customerData } = await supabase
+        .from("customers")
+        .select("organization_id")
+        .eq("user_id", user.id)
+        .limit(1)
+        .maybeSingle();
+      if (customerData?.organization_id) {
+        setHomeRedirect(`/katalog/${customerData.organization_id}`);
+        return;
+      }
+      setHomeRedirect("/onboarding");
+    })();
   }, [user, location.pathname]);
 
   if (loading) {
@@ -129,8 +143,8 @@ export default function App() {
           <Route path="gudang" element={<GudangPage />} />
           <Route path="outlets" element={<OutletsPage />} />
           <Route path="subscription" element={<SubscriptionPage />} />
+          <Route path="subscription/success" element={<PaymentSuccessPage />} />
           <Route path="toko" element={<TokoPage />} />
-          <Route path="whatsapp" element={<WhatsAppPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

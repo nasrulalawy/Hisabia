@@ -22,7 +22,6 @@ interface PayableWithSupplier extends Payable {
 
 function PiutangSection() {
   const { orgId, currentOutletId } = useOrg();
-  const [waSending, setWaSending] = useState<string | null>(null);
   const [data, setData] = useState<ReceivableWithCustomer[]>([]);
   const [customers, setCustomers] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -141,11 +140,6 @@ function PiutangSection() {
     setSubmitLoading(false);
   }
 
-  function handleSendWa(_row: ReceivableWithCustomer) {
-    setError("Fitur WhatsApp tidak tersedia (deploy tanpa server API). Gunakan nomor WA toko untuk mengirim pengingat secara manual.");
-    setWaSending(null);
-  }
-
   async function handleDelete() {
     if (!deleteTarget) return;
     setDeleteLoading(true);
@@ -168,22 +162,6 @@ function PiutangSection() {
       render: (r) => formatIdr(Number(r.amount) - Number(r.paid ?? 0)),
     },
     { key: "due_date", header: "Jatuh Tempo", render: (r) => (r.due_date ? formatDate(r.due_date) : "-") },
-    {
-      key: "wa",
-      header: "WA",
-      render: (r) => (
-        r.customer_id && r.customers?.phone && Number(r.amount) - Number(r.paid ?? 0) > 0 ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleSendWa(r)}
-            disabled={!!waSending}
-          >
-            {waSending === r.id ? "..." : "Kirim"}
-          </Button>
-        ) : null
-      ),
-    },
   ];
 
   return (

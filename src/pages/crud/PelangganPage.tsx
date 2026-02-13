@@ -26,6 +26,7 @@ export function PelangganPage() {
   const [submitLoading, setSubmitLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [catalogUrl, setCatalogUrl] = useState<string>("");
   const [inviteCustomer, setInviteCustomer] = useState<Customer | null>(null);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [inviteLoading, setInviteLoading] = useState(false);
@@ -49,6 +50,19 @@ export function PelangganPage() {
 
   useEffect(() => {
     fetchData();
+  }, [orgId]);
+
+  useEffect(() => {
+    if (!orgId) return;
+    (async () => {
+      const { data } = await supabase
+        .from("organizations")
+        .select("catalog_slug")
+        .eq("id", orgId)
+        .single();
+      const slug = data?.catalog_slug?.trim();
+      setCatalogUrl(`${window.location.origin}/katalog/${slug || orgId}`);
+    })();
   }, [orgId]);
 
   function openAdd() {
@@ -118,9 +132,8 @@ export function PelangganPage() {
   }
 
   function handleCopyCatalogLink() {
-    if (!orgId) return;
-    const url = `${window.location.origin}/katalog/${orgId}`;
-    navigator.clipboard.writeText(url);
+    if (!catalogUrl) return;
+    navigator.clipboard.writeText(catalogUrl);
     setLinkCopied(true);
     setTimeout(() => setLinkCopied(false), 2000);
   }
@@ -204,7 +217,7 @@ export function PelangganPage() {
           <p className="text-[var(--muted-foreground)]">Kelola data pelanggan organisasi.</p>
         </div>
         {orgId && (
-          <Button variant="outline" size="sm" onClick={handleCopyCatalogLink}>
+          <Button variant="outline" size="sm" onClick={handleCopyCatalogLink} disabled={!catalogUrl}>
             {linkCopied ? "Tersalin!" : "Salin Link Katalog"}
           </Button>
         )}
