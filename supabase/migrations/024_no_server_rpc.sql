@@ -313,12 +313,14 @@ BEGIN
 END;
 $$;
 
--- Helper: generate base64url-safe token (24 chars)
+-- Helper: generate base64url-safe token (no pgcrypto; uses gen_random_uuid)
 CREATE OR REPLACE FUNCTION public.gen_order_token()
 RETURNS text
 LANGUAGE sql
 AS $$
-  SELECT replace(replace(replace(encode(gen_random_bytes(16), 'base64'), '+', '-'), '/', '_'), '=', '');
+  SELECT replace(replace(replace(
+    encode(decode(replace(gen_random_uuid()::text, '-', ''), 'hex'), 'base64'),
+    '+', '-'), '/', '_'), '=', '');
 $$;
 
 -- create_katalog_order: buat pesanan katalog (auth, pelanggan login)

@@ -58,8 +58,8 @@ export function Dashboard() {
 
   useEffect(() => {
     if (!baseOrgId) return;
+    if (!baseOrgId) return;
     setLoading(true);
-
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
     const weekStart = new Date(now);

@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { formatIdr, formatDate } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 type PeriodType = "day" | "week" | "month" | "year";
 
@@ -54,6 +55,9 @@ export function LaporanPage() {
     paid: 0,
     unpaid: 0,
   });
+  const [deleteTarget, setDeleteTarget] = useState<OrderRow | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   function getDateRange(): { start: string; end: string; label: string } {
     let start: Date;
@@ -226,7 +230,25 @@ export function LaporanPage() {
 
       setLoading(false);
     });
-  }, [orgId, period, dateValue]);
+  }, [orgId, period, dateValue, refreshKey]);
+
+  async function handleDeleteOrder() {
+    if (!deleteTarget) return;
+    setDeleteLoading(true);
+    const { data, error } = await supabase.rpc("delete_order", { p_order_id: deleteTarget.id });
+    setDeleteLoading(false);
+    if (error) {
+      alert(error.message || "Gagal menghapus transaksi");
+      return;
+    }
+    const res = data as { error?: string };
+    if (res?.error) {
+      alert(res.error);
+      return;
+    }
+    setDeleteTarget(null);
+    setRefreshKey((k) => k + 1);
+  }
 
   return (
     <div className="space-y-6">
@@ -356,12 +378,13 @@ export function LaporanPage() {
                     <th className="px-3 py-2 text-right font-medium">Total</th>
                     <th className="px-3 py-2 text-right font-medium">HPP</th>
                     <th className="px-3 py-2 text-right font-medium">Laba</th>
+                    <th className="w-20 px-3 py-2 text-center font-medium">Aksi</th>
                   </tr>
                 </thead>
                 <tbody>
                   {orderRows.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-3 py-6 text-center text-[var(--muted-foreground)]">
+                      <td colSpan={8} className="px-3 py-6 text-center text-[var(--muted-foreground)]">
                         Tidak ada transaksi pada periode ini.
                       </td>
                     </tr>
@@ -376,6 +399,18 @@ export function LaporanPage() {
                         <td className="px-3 py-2 text-right text-red-600">{formatIdr(row.hpp)}</td>
                         <td className={`px-3 py-2 text-right font-medium ${row.laba >= 0 ? "text-emerald-600" : "text-red-600"}`}>
                           {formatIdr(row.laba)}
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <button
+                            type="button"
+                            onClick={() => setDeleteTarget(row)}
+                            className="rounded p-1.5 text-red-600 hover:bg-red-50"
+                            title="Hapus transaksi"
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
                         </td>
                       </tr>
                     ))
@@ -465,6 +500,20 @@ export function LaporanPage() {
           </div>
         </>
       )}
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteOrder}
+        title="Hapus Transaksi"
+        message={
+          deleteTarget
+            ? `Yakin ingin menghapus transaksi ${formatDate(deleteTarget.created_at)} (${formatIdr(deleteTarget.total)})? Stok akan dikembalikan.`
+            : ""
+        }
+        confirmLabel="Hapus"
+        loading={deleteLoading}
+      />
     </div>
   );
 }
