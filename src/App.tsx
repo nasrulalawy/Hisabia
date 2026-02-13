@@ -60,7 +60,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
         .select("organization_id")
         .eq("user_id", user.id)
         .limit(1)
-        .single();
+        .maybeSingle();
       if (orgData?.organization_id) {
         setHomeRedirect(`/org/${orgData.organization_id}/dashboard`);
         return;
