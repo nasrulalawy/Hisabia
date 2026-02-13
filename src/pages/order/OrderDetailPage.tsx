@@ -29,9 +29,11 @@ export function OrderDetailPage() {
       setLoading(false);
       return;
     }
-    supabase
-      .rpc("get_order_by_token", { p_token: token })
-      .then(({ data, error: rpcError }) => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error: rpcError } = await supabase.rpc("get_order_by_token", { p_token: token });
+        if (cancelled) return;
         const res = data as { error?: string } & OrderDetail | null;
         if (rpcError) {
           setError(rpcError.message || "Gagal memuat");
@@ -42,9 +44,13 @@ export function OrderDetailPage() {
           return;
         }
         if (res && "id" in res) setOrder(res);
-      })
-      .catch((err) => setError((err as Error).message || "Gagal memuat"))
-      .finally(() => setLoading(false));
+      } catch (err) {
+        if (!cancelled) setError((err as Error).message || "Gagal memuat");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [token]);
 
   if (loading) {
