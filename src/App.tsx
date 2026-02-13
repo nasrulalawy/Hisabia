@@ -31,6 +31,7 @@ import { CatalogPage } from "@/pages/shop/CatalogPage";
 import { OrderDetailPage } from "@/pages/order/OrderDetailPage";
 import { TokoPage } from "@/pages/settings/TokoPage";
 import { DaftarPelanggan } from "@/pages/DaftarPelanggan";
+import { InstallPWA } from "@/components/InstallPWA";
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<{ id: string } | null>(null);
@@ -112,6 +113,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <AuthGuard>
+      <InstallPWA />
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
