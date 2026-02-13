@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { formatIdr, formatDate } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import type { SubscriptionPlan } from "@/lib/database.types";
 
 interface AdminStats {
   orgCount: number;
@@ -21,6 +23,7 @@ interface OrgRow {
   outlet_count: number;
   sub_status: string | null;
   plan_name: string | null;
+  plan_id: string | null;
 }
 
 export function AdminDashboard() {
@@ -28,12 +31,16 @@ export function AdminDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [orgs, setOrgs] = useState<OrgRow[]>([]);
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+  const [savingOrgId, setSavingOrgId] = useState<string | null>(null);
+  const [planSelect, setPlanSelect] = useState<Record<string, string>>({});
 
   useEffect(() => {
     (async () => {
-      const [statsRes, orgsRes] = await Promise.all([
+      const [statsRes, orgsRes, plansRes] = await Promise.all([
         supabase.rpc("get_admin_stats"),
         supabase.rpc("get_admin_organizations"),
+        supabase.from("subscription_plans").select("*").order("price_monthly"),
       ]);
       const statsData = statsRes.data as { error?: string } & AdminStats | null;
       const orgsData = orgsRes.data as { error?: string } | OrgRow[] | null;
@@ -45,9 +52,15 @@ export function AdminDashboard() {
       }
       if (Array.isArray(orgsData)) {
         setOrgs(orgsData);
+        const initial: Record<string, string> = {};
+        orgsData.forEach((o: OrgRow) => {
+          initial[o.id] = o.plan_id ?? (plansRes.data?.[0]?.id ?? "");
+        });
+        setPlanSelect(initial);
       } else if (orgsData && typeof orgsData === "object" && "error" in orgsData) {
         setError((orgsData as { error?: string }).error ?? "Gagal memuat organisasi");
       }
+      if (plansRes.data) setPlans(plansRes.data);
       if (statsData && !statsData.error) {
         setStats({
           orgCount: statsData.orgCount ?? 0,
@@ -60,6 +73,30 @@ export function AdminDashboard() {
       setLoading(false);
     })();
   }, []);
+
+  async function handleSetPlan(orgId: string, planId: string) {
+    setSavingOrgId(orgId);
+    const { data } = await supabase.rpc("admin_set_org_plan", {
+      p_org_id: orgId,
+      p_plan_id: planId,
+    });
+    const res = data as { error?: string; success?: boolean } | null;
+    setSavingOrgId(null);
+    if (res?.error) {
+      setError(res.error);
+      return;
+    }
+    if (res?.success) {
+      setOrgs((prev) =>
+        prev.map((o) => {
+          if (o.id !== orgId) return o;
+          const plan = plans.find((p) => p.id === planId);
+          return { ...o, plan_id: planId, plan_name: plan?.name ?? null, sub_status: "active" };
+        })
+      );
+      setPlanSelect((prev) => ({ ...prev, [orgId]: planId }));
+    }
+  }
 
   if (loading) {
     return (
@@ -171,7 +208,7 @@ export function AdminDashboard() {
           <CardHeader>
             <CardTitle>Daftar Organisasi</CardTitle>
             <p className="text-sm text-[var(--muted-foreground)]">
-              Semua toko/organisasi yang terdaftar
+              Semua toko/organisasi. Anda bisa set paket untuk toko mana pun (tanpa bayar).
             </p>
           </CardHeader>
           <CardContent>
@@ -201,7 +238,31 @@ export function AdminDashboard() {
                       >
                         <td className="py-3 font-medium">{org.name}</td>
                         <td className="py-3 font-mono text-xs">{org.slug}</td>
-                        <td className="py-3">{org.plan_name ?? "—"}</td>
+                        <td className="py-3">
+                          <div className="flex items-center gap-2">
+                            <select
+                              className="rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-sm"
+                              value={planSelect[org.id] ?? org.plan_id ?? ""}
+                              onChange={(e) =>
+                                setPlanSelect((prev) => ({ ...prev, [org.id]: e.target.value }))
+                              }
+                            >
+                              {plans.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.name}
+                                </option>
+                              ))}
+                            </select>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={savingOrgId === org.id}
+                              onClick={() => handleSetPlan(org.id, planSelect[org.id] ?? org.plan_id ?? plans[0]?.id ?? "")}
+                            >
+                              {savingOrgId === org.id ? "..." : "Set"}
+                            </Button>
+                          </div>
+                        </td>
                         <td className="py-3">
                           <span
                             className={`rounded px-2 py-0.5 text-xs ${
