@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { formatIdr, formatDate } from "@/lib/utils";
+import { Button } from "@/components/ui/Button";
 
 interface OrderDetail {
   id: string;
+  organization_id?: string;
   order_token: string | null;
   status: string;
   subtotal: number;
@@ -22,6 +24,9 @@ export function OrderDetailPage() {
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [canFinalize, setCanFinalize] = useState(false);
+  const [needsLogin, setNeedsLogin] = useState(false);
+  const [finalizeLoading, setFinalizeLoading] = useState(false);
 
   useEffect(() => {
     if (!token) {
@@ -43,7 +48,23 @@ export function OrderDetailPage() {
           setError(res.error);
           return;
         }
-        if (res && "id" in res) setOrder(res);
+        if (res && "id" in res) {
+          setOrder(res);
+          if (res.organization_id) {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              const { data: member } = await supabase
+                .from("organization_members")
+                .select("id")
+                .eq("organization_id", res.organization_id)
+                .eq("user_id", user.id)
+                .maybeSingle();
+              if (!cancelled) setCanFinalize(!!member);
+            } else {
+              if (!cancelled) setNeedsLogin(true);
+            }
+          }
+        }
       } catch (err) {
         if (!cancelled) setError((err as Error).message || "Gagal memuat");
       } finally {
@@ -52,6 +73,23 @@ export function OrderDetailPage() {
     })();
     return () => { cancelled = true; };
   }, [token]);
+
+  async function handleFinalize() {
+    if (!order?.order_token) return;
+    setFinalizeLoading(true);
+    const { data, error: rpcErr } = await supabase.rpc("finalize_order", { p_order_token: order.order_token });
+    setFinalizeLoading(false);
+    const res = data as { error?: string; success?: boolean } | null;
+    if (rpcErr || res?.error) {
+      setError(res?.error || rpcErr?.message || "Gagal memproses");
+      return;
+    }
+    if (res?.success) {
+      setOrder((o) => (o ? { ...o, status: "paid" } : null));
+      setCanFinalize(false);
+      setNeedsLogin(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -137,6 +175,32 @@ export function OrderDetailPage() {
             <p className="mt-4 border-t border-[var(--border)] pt-4 text-sm text-[var(--muted-foreground)]">
               Catatan: {order.notes}
             </p>
+          )}
+
+          {order.status === "pending" && (
+            <div className="mt-6 border-t border-[var(--border)] pt-4">
+              {canFinalize ? (
+                <>
+                  <Button
+                    onClick={handleFinalize}
+                    disabled={finalizeLoading}
+                    className="w-full"
+                  >
+                    {finalizeLoading ? "Memproses..." : "Proses & Selesai"}
+                  </Button>
+                  <p className="mt-2 text-center text-xs text-[var(--muted-foreground)]">
+                    Stok akan terpotong dan pesanan masuk laporan
+                  </p>
+                </>
+              ) : needsLogin && (
+                <Link
+                  to={`/login?redirect=${encodeURIComponent(`/order/${order.order_token || token}`)}`}
+                  className="block w-full rounded-lg bg-[var(--primary)] py-3 text-center font-medium text-[var(--primary-foreground)]"
+                >
+                  Login untuk memproses pesanan
+                </Link>
+              )}
+            </div>
           )}
         </div>
       </div>

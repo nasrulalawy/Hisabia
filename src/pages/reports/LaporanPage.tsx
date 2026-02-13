@@ -108,7 +108,7 @@ export function LaporanPage() {
       .from("orders")
       .select("id, created_at, status, subtotal, discount, total, customer_id")
       .eq("organization_id", orgId)
-      .in("status", ["paid", "pending"])
+      .eq("status", "paid")
       .gte("created_at", start)
       .lte("created_at", end)
       .order("created_at", { ascending: false });
@@ -453,7 +453,7 @@ export function LaporanPage() {
               </CardHeader>
               <CardContent>
                 <p className="text-xl font-bold text-[var(--foreground)]">{orderCount}</p>
-                <p className="text-xs text-[var(--muted-foreground)]">Order paid/pending</p>
+                <p className="text-xs text-[var(--muted-foreground)]">Order lunas</p>
               </CardContent>
             </Card>
           </div>

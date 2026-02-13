@@ -11,6 +11,7 @@ export function TokoPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
 
   useEffect(() => {
     if (!orgId) return;
@@ -37,6 +38,7 @@ export function TokoPage() {
     const slug = catalogSlug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || null;
     setSaving(true);
     setError(null);
+    setSuccess(false);
     const { error: err } = await supabase
       .from("organizations")
       .update({
@@ -47,7 +49,11 @@ export function TokoPage() {
       .eq("id", orgId);
     setSaving(false);
     if (err) setError(err.message);
-    else if (slug) setCatalogSlug(slug);
+    else {
+      setSuccess(true);
+      if (slug) setCatalogSlug(slug);
+      setTimeout(() => setSuccess(false), 3000);
+    }
   }
 
   function getCatalogUrl() {
@@ -75,6 +81,11 @@ export function TokoPage() {
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
+        </div>
+      )}
+      {success && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          Info toko berhasil disimpan.
         </div>
       )}
       <form onSubmit={handleSubmit} className="max-w-md space-y-4">
