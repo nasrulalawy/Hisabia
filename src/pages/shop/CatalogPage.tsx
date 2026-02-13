@@ -360,7 +360,7 @@ export function CatalogPage() {
               Belanja online · Masuk sebagai pelanggan
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => navigate("/")}>
+          <Button variant="outline" size="sm" onClick={() => navigate("/logout")}>
             Keluar
           </Button>
         </div>
