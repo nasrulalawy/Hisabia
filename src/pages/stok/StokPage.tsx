@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
-import { formatDate } from "@/lib/utils";
+import { formatDate, getStockStatus, getStockStatusLabel } from "@/lib/utils";
 import { DataTable, type Column } from "@/components/crud/DataTable";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
@@ -155,11 +155,21 @@ export function StokPage() {
     {
       key: "stock",
       header: "Stok",
-      render: (r) => (
-        <span>
-          {Number(r.stock)} {r.units?.symbol ?? ""}
-        </span>
-      ),
+      render: (r) => {
+        const stock = Number(r.stock);
+        const status = getStockStatus(stock);
+        const label = getStockStatusLabel(status);
+        return (
+          <span className="flex items-center gap-2">
+            <span>{stock} {r.units?.symbol ?? ""}</span>
+            {label && (
+              <Badge variant={status === "minus" || status === "empty" ? "destructive" : "warning"}>
+                {label}
+              </Badge>
+            )}
+          </span>
+        );
+      },
     },
     {
       key: "is_available",

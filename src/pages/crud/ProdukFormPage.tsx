@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { parsePriceIdr } from "@/lib/utils";
 
 export function ProdukFormPage() {
   const { orgId, id: productId } = useParams<{ orgId: string; id?: string }>();
@@ -58,15 +59,19 @@ export function ProdukFormPage() {
       setError(err?.message ?? "Produk tidak ditemukan");
       return;
     }
+    const fmt = (n: number | string) => {
+      const x = Number(n);
+      return isNaN(x) || x % 1 === 0 ? String(Math.round(x)) : String(x);
+    };
     setForm({
       name: data.name,
       description: data.description ?? "",
       category_id: data.category_id ?? "",
       supplier_id: data.supplier_id ?? "",
       default_unit_id: data.default_unit_id ?? "",
-      cost_price: String(data.cost_price ?? 0),
-      selling_price: String(data.selling_price ?? 0),
-      stock: String(data.stock ?? 0),
+      cost_price: fmt(data.cost_price ?? 0),
+      selling_price: fmt(data.selling_price ?? 0),
+      stock: fmt(data.stock ?? 0),
       is_available: data.is_available ?? true,
     });
   }
@@ -94,9 +99,9 @@ export function ProdukFormPage() {
       category_id: form.category_id || null,
       supplier_id: form.supplier_id || null,
       default_unit_id: form.default_unit_id || null,
-      cost_price: parseFloat(form.cost_price) || 0,
-      selling_price: parseFloat(form.selling_price) || 0,
-      stock: parseFloat(form.stock) || 0,
+      cost_price: parsePriceIdr(form.cost_price) || 0,
+      selling_price: parsePriceIdr(form.selling_price) || 0,
+      stock: parsePriceIdr(form.stock) || 0,
       is_available: form.is_available,
     };
     if (isEdit) {
@@ -231,23 +236,21 @@ export function ProdukFormPage() {
               <div>
                 <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">HPP (Harga Beli)</label>
                 <Input
-                  type="number"
-                  min={0}
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
                   value={form.cost_price}
                   onChange={(e) => setForm((f) => ({ ...f, cost_price: e.target.value }))}
-                  placeholder="0"
+                  placeholder="0 atau 10.000"
                 />
               </div>
               <div>
                 <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Harga Jual</label>
                 <Input
-                  type="number"
-                  min={0}
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
                   value={form.selling_price}
                   onChange={(e) => setForm((f) => ({ ...f, selling_price: e.target.value }))}
-                  placeholder="0"
+                  placeholder="0 atau 10.000"
                 />
               </div>
             </div>
@@ -255,12 +258,11 @@ export function ProdukFormPage() {
               <div>
                 <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Stok Awal</label>
                 <Input
-                  type="number"
-                  min={0}
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
                   value={form.stock}
                   onChange={(e) => setForm((f) => ({ ...f, stock: e.target.value }))}
-                  placeholder="0"
+                  placeholder="0 atau 10.000"
                   disabled={isEdit}
                 />
                 {isEdit && (

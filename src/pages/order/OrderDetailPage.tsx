@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import { supabase } from "@/lib/supabase";
 import { formatIdr, formatDate } from "@/lib/utils";
 
 interface OrderDetail {
@@ -16,8 +17,6 @@ interface OrderDetail {
   items: { name: string; price: number; quantity: number }[];
 }
 
-const API = "/api";
-
 export function OrderDetailPage() {
   const { token } = useParams<{ token: string }>();
   const [order, setOrder] = useState<OrderDetail | null>(null);
@@ -30,14 +29,19 @@ export function OrderDetailPage() {
       setLoading(false);
       return;
     }
-    fetch(`${API}/order/${token}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.error) {
-          setError(data.error);
+    supabase
+      .rpc("get_order_by_token", { p_token: token })
+      .then(({ data, error: rpcError }) => {
+        const res = data as { error?: string } & OrderDetail | null;
+        if (rpcError) {
+          setError(rpcError.message || "Gagal memuat");
           return;
         }
-        setOrder(data);
+        if (res?.error) {
+          setError(res.error);
+          return;
+        }
+        if (res && "id" in res) setOrder(res);
       })
       .catch((err) => setError((err as Error).message || "Gagal memuat"))
       .finally(() => setLoading(false));

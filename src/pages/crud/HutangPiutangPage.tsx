@@ -141,32 +141,9 @@ function PiutangSection() {
     setSubmitLoading(false);
   }
 
-  async function handleSendWa(row: ReceivableWithCustomer) {
-    if (!currentOutletId || !row.customer_id || !row.customers?.phone) {
-      setError("Pelanggan tidak memiliki nomor HP");
-      return;
-    }
-    setWaSending(row.id);
-    setError(null);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      if (!token) throw new Error("Masuk terlebih dahulu");
-      const sisa = Number(row.amount) - Number(row.paid ?? 0);
-      if (sisa <= 0) throw new Error("Tidak ada sisa tagihan");
-      const msg = `Halo ${row.customers.name}, Anda memiliki tagihan sebesar ${formatIdr(sisa)}. Silakan hubungi kami untuk pembayaran.`;
-      const res = await fetch(`/api/wa/${currentOutletId}/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ phone: row.customers.phone, message: msg }),
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setWaSending(null);
-    }
+  function handleSendWa(_row: ReceivableWithCustomer) {
+    setError("Fitur WhatsApp tidak tersedia (deploy tanpa server API). Gunakan nomor WA toko untuk mengirim pengingat secara manual.");
+    setWaSending(null);
   }
 
   async function handleDelete() {

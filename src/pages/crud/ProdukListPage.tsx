@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
-import { formatIdr } from "@/lib/utils";
+import { formatIdr, getStockStatus, getStockStatusLabel } from "@/lib/utils";
 import { DataTable, type Column } from "@/components/crud/DataTable";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -88,7 +88,23 @@ export function ProdukListPage() {
     {
       key: "stock",
       header: "Stok",
-      render: (row) => `${Number(row.stock)} ${row.units?.symbol ?? ""}`,
+      render: (row) => {
+        const stock = Number(row.stock);
+        const status = getStockStatus(stock);
+        const label = getStockStatusLabel(status);
+        return (
+          <span className="flex items-center gap-2">
+            <span>{stock} {row.units?.symbol ?? ""}</span>
+            {label && (
+              <Badge
+                variant={status === "minus" || status === "empty" ? "destructive" : "warning"}
+              >
+                {label}
+              </Badge>
+            )}
+          </span>
+        );
+      },
     },
     {
       key: "cost_price",

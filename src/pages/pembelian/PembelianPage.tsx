@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
-import { formatIdr } from "@/lib/utils";
+import { formatIdr, parsePriceIdr } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -79,8 +79,8 @@ export function PembelianPage() {
   }
 
   const totalAmount = items.reduce((s, i) => {
-    const q = parseFloat(i.qty) || 0;
-    const p = parseFloat(i.price) || 0;
+    const q = parsePriceIdr(i.qty) || 0;
+    const p = parsePriceIdr(i.price) || 0;
     return s + q * p;
   }, 0);
 
@@ -88,7 +88,7 @@ export function PembelianPage() {
     e.preventDefault();
     if (!orgId) return;
 
-    const validItems = items.filter((i) => i.product_id && parseFloat(i.qty) > 0);
+    const validItems = items.filter((i) => i.product_id && parsePriceIdr(i.qty) > 0);
     if (validItems.length === 0) {
       setError("Tambahkan minimal 1 produk dengan jumlah > 0");
       return;
@@ -110,8 +110,8 @@ export function PembelianPage() {
         const product = products.find((p) => p.id === item.product_id);
         if (!product) continue;
 
-        const qty = parseFloat(item.qty);
-        const price = parseFloat(item.price);
+        const qty = parsePriceIdr(item.qty);
+        const price = parsePriceIdr(item.price);
         const currentStock = Number(product.stock ?? 0);
         const currentCost = Number(product.cost_price ?? 0);
         const newStock = currentStock + qty;

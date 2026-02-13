@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
-import { formatDate } from "@/lib/utils";
+import { formatDate, parsePriceIdr } from "@/lib/utils";
 import { DataTable, type Column } from "@/components/crud/DataTable";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
@@ -87,7 +87,7 @@ export function StokTokoPage() {
 
     const product = products.find((p) => p.id === form.product_id);
     const currentStock = Number(product?.stock ?? 0);
-    const price = parseFloat(form.price) || Number(product?.cost_price ?? 0);
+    const price = parsePriceIdr(form.price) || Number(product?.cost_price ?? 0);
 
     if (modalType === "adjust" && qty < 0 && Math.abs(qty) > currentStock) {
       setError(`Stok tidak cukup. Stok saat ini: ${currentStock}`);

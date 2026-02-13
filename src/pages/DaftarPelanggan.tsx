@@ -4,7 +4,6 @@ import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
-import { getApiBase } from "@/lib/utils";
 
 interface InviteInfo {
   email: string;
@@ -34,53 +33,29 @@ export function DaftarPelanggan() {
       setLoading(false);
       return;
     }
-    const encodedToken = encodeURIComponent(token);
-    const apiBase = getApiBase();
-    const url = apiBase ? `${apiBase}/invite/${encodedToken}` : `/api/invite/${encodedToken}`;
-    fetch(url)
-      .then(async (r) => {
-        const text = (await r.text()).trim();
-        let data: { error?: string } & InviteInfo;
-        try {
-          data = text ? JSON.parse(text) : {};
-        } catch {
-          if (r.status === 404) {
-            setError(
-              "Link undangan tidak ditemukan. Pastikan server API berjalan (npm run server di folder project) dan link yang dibuka sama persis dengan yang dikirim toko."
-            );
-          } else {
-            setError(r.ok ? "Respons tidak valid" : `Gagal memuat (${r.status}). Pastikan server API berjalan.`);
-          }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error: rpcError } = await supabase.rpc("get_invite_by_token", { p_token: token });
+        if (cancelled) return;
+        const res = data as { error?: string } & InviteInfo | null;
+        if (rpcError) {
+          setError(rpcError.message || "Gagal memuat undangan.");
           setInvite(null);
-          setLoading(false);
           return;
         }
-        if (!r.ok) {
-          setError(data.error || `Gagal memuat (${r.status})`);
+        if (res?.error) {
+          setError(res.error);
           setInvite(null);
-          setLoading(false);
-          return;
-        }
-        if (data.error) {
-          setError(data.error);
-          setInvite(null);
-        } else {
-          setInvite(data);
+        } else if (res && "email" in res) {
+          setInvite({ ...res, catalogUrl: `${window.location.origin}/katalog/${res.orgId}` });
           setError(null);
         }
-      })
-      .catch((err) => {
-        const msg = err?.message || "";
-        setError(
-          msg.includes("Failed to fetch") || msg.includes("NetworkError")
-            ? "Tidak bisa terhubung ke server. Pastikan aplikasi (npm run dev) dan server API (npm run server) berjalan, lalu coba lagi."
-            : msg
-            ? `Gagal memuat undangan: ${msg}`
-            : "Gagal memuat undangan. Cek link atau minta toko kirim link baru."
-        );
-        setInvite(null);
-      })
-      .finally(() => setLoading(false));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [token]);
 
   useEffect(() => {
@@ -90,26 +65,19 @@ export function DaftarPelanggan() {
       if (!user) return;
       if ((user.email || "").toLowerCase() !== invite.email.toLowerCase()) return;
       setLinking(true);
-      const session = (await supabase.auth.getSession()).data.session;
-      const accessToken = session?.access_token;
-      if (!accessToken) {
-        setLinking(false);
+      const { data: linkData, error: linkErr } = await supabase.rpc("link_invite_token", { p_token: token });
+      setLinking(false);
+      const res = linkData as { linked?: boolean; orgId?: string; error?: string } | null;
+      if (linkErr) {
+        setError(linkErr.message);
         return;
       }
-      const linkUrl = getApiBase() ? `${getApiBase()}/invite/${encodeURIComponent(token)}/link` : `/api/invite/${encodeURIComponent(token)}/link`;
-      const res = await fetch(linkUrl, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-      });
-      const data = await res.json();
-      setLinking(false);
-      if (data.catalogUrl) {
-        navigate(data.catalogUrl, { replace: true });
-      } else if (data.error) {
-        setError(data.error);
+      if (res?.error) {
+        setError(res.error);
+        return;
+      }
+      if (res?.linked && res?.orgId) {
+        navigate(`/katalog/${res.orgId}`, { replace: true });
       }
     };
     linkIfLoggedIn();
@@ -145,22 +113,19 @@ export function DaftarPelanggan() {
       setSubmitLoading(false);
       return;
     }
-    const linkUrl = getApiBase() ? `${getApiBase()}/invite/${encodeURIComponent(token)}/link` : `/api/invite/${encodeURIComponent(token)}/link`;
-    const res = await fetch(linkUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-    });
-    const data = await res.json();
+    const { data: linkData, error: linkErr } = await supabase.rpc("link_invite_token", { p_token: token });
     setSubmitLoading(false);
-    if (data.error) {
-      setError(data.error);
+    const res = linkData as { linked?: boolean; orgId?: string; error?: string } | null;
+    if (linkErr) {
+      setError(linkErr.message);
       return;
     }
-    if (data.catalogUrl) {
-      navigate(data.catalogUrl, { replace: true });
+    if (res?.error) {
+      setError(res.error);
+      return;
+    }
+    if (res?.linked && res?.orgId) {
+      navigate(`/katalog/${res.orgId}`, { replace: true });
     }
   }
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import { supabase } from "@/lib/supabase";
 import { formatIdr } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -49,7 +50,54 @@ interface CartItem {
   qty: number;
 }
 
-const API = "/api";
+function buildCatalogFromRpc(
+  products: { id: string; name: string; stock: number; selling_price: number; default_unit_id: string | null; category_id: string | null; image_url: string | null }[],
+  productUnits: { product_id: string; unit_id: string; conversion_to_base: number; is_base: boolean; symbol: string; name: string }[],
+  productPrices: { product_id: string; unit_id: string; customer_id: string | null; price: number }[],
+  customerId: string
+): CatalogProduct[] {
+  const puByProduct = new Map<string, typeof productUnits>();
+  productUnits.forEach((pu) => {
+    if (!puByProduct.has(pu.product_id)) puByProduct.set(pu.product_id, []);
+    puByProduct.get(pu.product_id)!.push(pu);
+  });
+  function resolvePrice(productId: string, unitId: string): number {
+    const cust = productPrices.find((p) => p.product_id === productId && p.unit_id === unitId && p.customer_id === customerId);
+    if (cust) return cust.price;
+    const general = productPrices.find((p) => p.product_id === productId && p.unit_id === unitId && !p.customer_id);
+    if (general) return general.price;
+    const prod = products.find((p) => p.id === productId);
+    const pu = productUnits.find((u) => u.product_id === productId && u.unit_id === unitId);
+    if (!prod || !pu) return 0;
+    return pu.is_base ? prod.selling_price : prod.selling_price * pu.conversion_to_base;
+  }
+  return products.map((p) => {
+    const units = puByProduct.get(p.id) || [];
+    const unitsWithPrice: CatalogUnit[] = units.length
+      ? units.map((u) => ({
+          id: u.unit_id,
+          unit_id: u.unit_id,
+          conversion_to_base: u.conversion_to_base,
+          is_base: u.is_base,
+          symbol: u.symbol,
+          name: u.name,
+          price: resolvePrice(p.id, u.unit_id),
+        }))
+      : [{ id: p.default_unit_id || "", unit_id: p.default_unit_id, conversion_to_base: 1, is_base: true, symbol: "pcs", name: "Pcs", price: p.selling_price }];
+    const first = unitsWithPrice[0];
+    return {
+      id: p.id,
+      name: p.name,
+      stock: p.stock,
+      image_url: p.image_url,
+      category_id: p.category_id,
+      default_unit_id: p.default_unit_id,
+      units: unitsWithPrice,
+      default_price: first?.price ?? p.selling_price,
+      default_unit: first ?? { id: "", unit_id: null, conversion_to_base: 1, is_base: true, symbol: "pcs", name: "Pcs", price: p.selling_price },
+    };
+  });
+}
 
 export function ShopPage() {
   const { token } = useParams<{ token: string }>();
@@ -78,25 +126,31 @@ export function ShopPage() {
       return;
     }
     Promise.all([
-      fetch(`${API}/shop/${token}`).then((r) => r.json()),
-      fetch(`${API}/shop/${token}/catalog`).then((r) => r.json()),
+      supabase.rpc("get_shop_by_token", { p_token: token }).then((r) => r.data as { error?: string; customer?: { id: string; name: string }; organization?: { id: string; name: string; phone: string | null }; outlet?: { id: string; name: string } } | null),
+      supabase.rpc("get_shop_catalog", { p_token: token }).then((r) => r.data as { error?: string; products?: unknown[]; categories?: { id: string; name: string; sort_order: number }[]; product_units?: unknown[]; product_prices?: unknown[]; customer_id?: string } | null),
     ])
       .then(([infoRes, catalogRes]) => {
-        if (infoRes.error || !infoRes.customer) {
-          setError(infoRes.error || "Link tidak valid");
+        if (infoRes?.error || !infoRes?.customer) {
+          setError(infoRes?.error || "Link tidak valid");
           return;
         }
-        if (catalogRes.error) {
+        if (catalogRes?.error) {
           setError(catalogRes.error);
           return;
         }
-        setShopInfo(infoRes);
-        setProducts(catalogRes.products || []);
-        setCategories(catalogRes.categories || []);
+        setShopInfo({
+          customer: infoRes.customer,
+          organization: infoRes.organization ?? null,
+          outlet: infoRes.outlet ?? null,
+        });
+        const prods = (catalogRes?.products || []) as { id: string; name: string; stock: number; selling_price: number; default_unit_id: string | null; category_id: string | null; image_url: string | null }[];
+        const pus = (catalogRes?.product_units || []) as { product_id: string; unit_id: string; conversion_to_base: number; is_base: boolean; symbol: string; name: string }[];
+        const pps = (catalogRes?.product_prices || []) as { product_id: string; unit_id: string; customer_id: string | null; price: number }[];
+        const custId = catalogRes?.customer_id ?? "";
+        setCategories((catalogRes?.categories || []) as Category[]);
+        setProducts(buildCatalogFromRpc(prods, pus, pps, custId));
       })
-      .catch((err) => {
-        setError(err.message || "Gagal memuat data");
-      })
+      .catch((err) => setError(err?.message || "Gagal memuat data"))
       .finally(() => setLoading(false));
   }, [token]);
 
@@ -180,31 +234,28 @@ export function ShopPage() {
         unit_id: c.unitId,
         quantity: c.qty,
       }));
-      const res = await fetch(`${API}/shop/${token}/order`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items, notes: notes.trim() || null }),
+      const { data, error: rpcError } = await supabase.rpc("create_shop_order", {
+        p_token: token,
+        p_items: items,
+        p_notes: notes.trim() || null,
+        p_discount: 0,
       });
-      const data = await res.json();
-      if (data.error) {
-        setError(data.error);
+      const res = data as { orderId?: string; orderToken?: string; total?: number; error?: string } | null;
+      if (rpcError) {
+        setError(rpcError.message || "Gagal memesan");
         setCheckoutLoading(false);
         return;
       }
-      setSuccessOrderId(data.orderId);
+      if (res?.error) {
+        setError(res.error);
+        setCheckoutLoading(false);
+        return;
+      }
+      setSuccessOrderId(res?.orderId ?? null);
       setCart([]);
       setNotes("");
       setCheckoutOpen(false);
-
-      if (data.sentViaWa) {
-        setError(null);
-      } else if (data.whatsappPhone && data.orderDetailUrl) {
-        const msg = encodeURIComponent(
-          `Halo, saya sudah memesan. Detail pesanan: ${data.orderDetailUrl}`
-        );
-        const waUrl = `https://wa.me/${data.whatsappPhone}?text=${msg}`;
-        window.open(waUrl, "_blank");
-      }
+      setError(null);
     } catch (err) {
       setError((err as Error).message || "Gagal memesan");
     } finally {

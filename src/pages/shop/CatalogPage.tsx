@@ -44,8 +44,6 @@ interface CartItem {
   qty: number;
 }
 
-const API = "/api";
-
 export function CatalogPage() {
   const { orgId } = useParams<{ orgId: string }>();
   const navigate = useNavigate();
@@ -287,46 +285,33 @@ export function CatalogPage() {
     if (!orgId || cart.length === 0) return;
     setCheckoutLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      if (!token) {
-        setError("Sesi habis. Silakan login kembali.");
-        setCheckoutLoading(false);
-        return;
-      }
       const items = cart.map((c) => ({
         product_id: c.productId,
         unit_id: c.unitId,
         quantity: c.qty,
       }));
-      const res = await fetch(`${API}/katalog/${orgId}/order`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ items, notes: notes.trim() || null }),
+      const { data, error: rpcError } = await supabase.rpc("create_katalog_order", {
+        p_org_id: orgId,
+        p_items: items,
+        p_notes: notes.trim() || null,
+        p_discount: 0,
       });
-      const data = await res.json();
-      if (data.error) {
-        setError(data.error);
+      const res = data as { orderId?: string; orderToken?: string; total?: number; error?: string } | null;
+      if (rpcError) {
+        setError(rpcError.message || "Gagal memesan");
         setCheckoutLoading(false);
         return;
       }
-      setSuccessOrderId(data.orderId);
+      if (res?.error) {
+        setError(res.error);
+        setCheckoutLoading(false);
+        return;
+      }
+      setSuccessOrderId(res?.orderId ?? null);
       setCart([]);
       setNotes("");
       setCheckoutOpen(false);
-
-      if (data.sentViaWa) {
-        setError(null);
-      } else if (data.whatsappPhone && data.orderDetailUrl) {
-        const msg = encodeURIComponent(
-          `Halo, saya sudah memesan. Detail pesanan: ${data.orderDetailUrl}`
-        );
-        const waUrl = `https://wa.me/${data.whatsappPhone}?text=${msg}`;
-        window.open(waUrl, "_blank");
-      }
+      setError(null);
     } catch (err) {
       setError((err as Error).message || "Gagal memesan");
     } finally {

@@ -104,10 +104,25 @@ export interface MenuItem {
   updated_at: string;
 }
 
+export interface Shift {
+  id: string;
+  organization_id: string;
+  outlet_id: string;
+  opened_by: string | null;
+  opened_at: string;
+  closed_at: string | null;
+  initial_cash: number;
+  end_cash: number | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Order {
   id: string;
   organization_id: string;
   outlet_id: string;
+  shift_id: string | null;
   created_by: string | null;
   customer_id: string | null;
   status: OrderStatus;

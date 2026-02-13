@@ -42,30 +42,23 @@ export function Onboarding() {
     }
     setError(null);
     setLoading(true);
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token;
-    if (!token) {
-      setError("Sesi tidak valid. Silakan masuk lagi.");
-      setLoading(false);
-      return;
-    }
-    const res = await fetch("/api/create-organization", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        name: nameTrim,
-        slug: slug.trim() || undefined,
-        outletName: outletName.trim() || undefined,
-      }),
+    const { data, error: rpcError } = await supabase.rpc("create_organization", {
+      p_name: nameTrim,
+      p_slug: slug.trim() || null,
+      p_outlet_name: outletName.trim() || null,
     });
-    const data = await res.json().catch(() => ({}));
     setLoading(false);
-    if (!res.ok) {
-      setError(data.error || "Gagal membuat usaha.");
+    const res = data as { organizationId?: string; error?: string } | null;
+    if (rpcError) {
+      setError(rpcError.message || "Gagal membuat usaha.");
       return;
     }
-    if (data.organizationId) {
-      navigate(`/org/${data.organizationId}/dashboard`, { replace: true });
+    if (res?.error) {
+      setError(res.error);
+      return;
+    }
+    if (res?.organizationId) {
+      navigate(`/org/${res.organizationId}/dashboard`, { replace: true });
     }
   }
 

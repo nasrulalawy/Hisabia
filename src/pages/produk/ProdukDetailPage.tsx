@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
-import { formatIdr } from "@/lib/utils";
+import { formatIdr, parsePriceIdr } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -121,7 +121,7 @@ export function ProdukDetailPage() {
       product_id: productId,
       unit_id: priceForm.unit_id || null,
       customer_id: priceForm.customer_id || null,
-      price: parseFloat(priceForm.price) || 0,
+      price: parsePriceIdr(priceForm.price) || 0,
       price_type: priceForm.price_type,
     });
     setPriceModal(false);

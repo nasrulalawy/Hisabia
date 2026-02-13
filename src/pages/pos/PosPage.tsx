@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
-import { formatIdr } from "@/lib/utils";
+import { formatIdr, getStockStatus, getStockStatusLabel } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
+import { Badge } from "@/components/ui/Badge";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 interface ProductUnitRow {
   id: string;
@@ -97,6 +99,84 @@ export function PosPage() {
   const [cashReceived, setCashReceived] = useState<number>(0);
   const [debtMode, setDebtMode] = useState<"full" | "partial" | null>(null);
   const [payNow, setPayNow] = useState<number>(0);
+  const [activeShift, setActiveShift] = useState<{ id: string; initial_cash: number; opened_at: string } | null>(null);
+  const [shiftLoading, setShiftLoading] = useState(true);
+  const [openShiftModal, setOpenShiftModal] = useState(false);
+  const [openShiftForm, setOpenShiftForm] = useState({ initial_cash: "", notes: "" });
+  const [openShiftSubmitting, setOpenShiftSubmitting] = useState(false);
+  const [closeShiftModal, setCloseShiftModal] = useState(false);
+  const [closeShiftForm, setCloseShiftForm] = useState({ end_cash: "" });
+  const [closeShiftSubmitting, setCloseShiftSubmitting] = useState(false);
+  const [exceedStockConfirm, setExceedStockConfirm] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({ open: false, title: "", message: "", onConfirm: () => {} });
+
+  async function fetchActiveShift() {
+    if (!currentOutletId) return;
+    setShiftLoading(true);
+    const { data } = await supabase
+      .from("shifts")
+      .select("id, initial_cash, opened_at")
+      .eq("outlet_id", currentOutletId)
+      .is("closed_at", null)
+      .maybeSingle();
+    setActiveShift(data);
+    setShiftLoading(false);
+  }
+
+  async function handleOpenShift(e: React.FormEvent) {
+    e.preventDefault();
+    if (!orgId || !currentOutletId) return;
+    const initialCash = parseFloat(openShiftForm.initial_cash) || 0;
+    if (initialCash < 0) return;
+    setOpenShiftSubmitting(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: shift, error } = await supabase
+      .from("shifts")
+      .insert({
+        organization_id: orgId,
+        outlet_id: currentOutletId,
+        opened_by: user?.id,
+        initial_cash: initialCash,
+        notes: openShiftForm.notes.trim() || null,
+      })
+      .select("id, initial_cash, opened_at")
+      .single();
+    setOpenShiftSubmitting(false);
+    if (error) {
+      console.error("Open shift error:", error);
+      return;
+    }
+    setActiveShift(shift);
+    setOpenShiftModal(false);
+    setOpenShiftForm({ initial_cash: "", notes: "" });
+  }
+
+  async function handleCloseShift(e: React.FormEvent) {
+    e.preventDefault();
+    if (!activeShift) return;
+    const endCash = parseFloat(closeShiftForm.end_cash) || 0;
+    setCloseShiftSubmitting(true);
+    const { error } = await supabase
+      .from("shifts")
+      .update({
+        closed_at: new Date().toISOString(),
+        end_cash: endCash,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", activeShift.id);
+    setCloseShiftSubmitting(false);
+    if (error) {
+      console.error("Close shift error:", error);
+      return;
+    }
+    setActiveShift(null);
+    setCloseShiftModal(false);
+    setCloseShiftForm({ end_cash: "" });
+  }
 
   async function fetchProducts() {
     if (!orgId) {
@@ -177,6 +257,10 @@ export function PosPage() {
   useEffect(() => {
     fetchProducts();
   }, [orgId, currentOutletId]);
+
+  useEffect(() => {
+    fetchActiveShift();
+  }, [currentOutletId]);
 
   const subtotal = cart.reduce((s, c) => s + c.price * c.qty, 0);
   const tax = 0;
@@ -266,7 +350,7 @@ export function PosPage() {
     });
   }
 
-  function confirmAddToCart() {
+  function doAddToCart() {
     if (!addModal) return;
     const { product, qty, selectedUnit, priceType: pt } = addModal;
     if (!selectedUnit || qty < 1) return;
@@ -302,6 +386,36 @@ export function PosPage() {
     setAddModal(null);
   }
 
+  function confirmAddToCart() {
+    if (!addModal) return;
+    const { product, qty, selectedUnit, priceType: pt } = addModal;
+    if (!selectedUnit || qty < 1) return;
+    const unitId = selectedUnit.unit_id;
+    const price = resolvePrice(product, unitId, pt);
+    if (price == null) return;
+    const conversionToBase = selectedUnit.conversion_to_base ?? 1;
+
+    const existing = cart.find((c) => c.productId === product.id && c.unitId === unitId);
+    const existingQtyBase = (existing ? existing.qty * existing.conversionToBase : 0);
+    const newQtyBase = qty * conversionToBase;
+    const totalQtyBase = existingQtyBase + newQtyBase;
+    const stock = Number(product.stock ?? 0);
+
+    if (totalQtyBase > stock) {
+      setExceedStockConfirm({
+        open: true,
+        title: "Stok tidak cukup",
+        message: `Stok "${product.name}" hanya ${stock}. Jumlah yang diminta setara ${totalQtyBase} (dasar). Lanjutkan? Stok dapat menjadi minus.`,
+        onConfirm: () => {
+          doAddToCart();
+          setExceedStockConfirm((s) => ({ ...s, open: false }));
+        },
+      });
+      return;
+    }
+    doAddToCart();
+  }
+
   function addToCart(product: ProductWithCategory) {
     const units = getUnitsForProduct(product);
     if (units.length === 1) {
@@ -311,7 +425,7 @@ export function PosPage() {
     openAddModal(product);
   }
 
-  function updateQty(productId: string, unitId: string, delta: number) {
+  function doUpdateQty(productId: string, unitId: string, delta: number) {
     setCart(
       cart
         .map((c) =>
@@ -321,6 +435,35 @@ export function PosPage() {
         )
         .filter((c) => c.qty > 0)
     );
+  }
+
+  function updateQty(productId: string, unitId: string, delta: number) {
+    if (delta <= 0) {
+      doUpdateQty(productId, unitId, delta);
+      return;
+    }
+    const item = cart.find((c) => c.productId === productId && c.unitId === unitId);
+    if (!item) return;
+    const product = products.find((p) => p.id === productId);
+    if (!product) {
+      doUpdateQty(productId, unitId, delta);
+      return;
+    }
+    const newQtyBase = (item.qty + delta) * item.conversionToBase;
+    const stock = Number(product.stock ?? 0);
+    if (newQtyBase > stock) {
+      setExceedStockConfirm({
+        open: true,
+        title: "Stok tidak cukup",
+        message: `Stok "${product.name}" hanya ${stock}. Jumlah yang diminta setara ${newQtyBase}. Lanjutkan? Stok dapat menjadi minus.`,
+        onConfirm: () => {
+          doUpdateQty(productId, unitId, delta);
+          setExceedStockConfirm((s) => ({ ...s, open: false }));
+        },
+      });
+      return;
+    }
+    doUpdateQty(productId, unitId, delta);
   }
 
   function openCheckoutModal() {
@@ -336,7 +479,7 @@ export function PosPage() {
   }
 
   async function checkout() {
-    if (!orgId || !currentOutletId || cart.length === 0) return;
+    if (!orgId || !currentOutletId || !activeShift || cart.length === 0) return;
     setCheckoutLoading(true);
     setSuccessMsg(null);
 
@@ -351,6 +494,7 @@ export function PosPage() {
       .insert({
         organization_id: orgId,
         outlet_id: currentOutletId,
+        shift_id: activeShift.id,
         created_by: user?.id,
         customer_id: selectedCustomerId || null,
         status: "paid",
@@ -472,8 +616,87 @@ export function PosPage() {
     );
   }
 
+  if (shiftLoading) {
+    return (
+      <div className="flex min-h-[400px] items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--background)]">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (!activeShift) {
+    return (
+      <div className="flex min-h-[400px] flex-col items-center justify-center gap-6 rounded-xl border border-[var(--border)] bg-[var(--background)] p-8">
+        <p className="text-center text-[var(--muted-foreground)]">
+          Buka shift terlebih dahulu untuk memulai transaksi.
+        </p>
+        <Button onClick={() => setOpenShiftModal(true)} size="lg">
+          Buka Shift
+        </Button>
+        <Modal
+          open={openShiftModal}
+          onClose={() => setOpenShiftModal(false)}
+          title="Buka Shift"
+          size="sm"
+        >
+          <form onSubmit={handleOpenShift} className="space-y-4">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
+                Modal Awal Kasir (Rp) *
+              </label>
+              <Input
+                type="number"
+                min="0"
+                step="1000"
+                placeholder="0"
+                value={openShiftForm.initial_cash}
+                onChange={(e) => setOpenShiftForm((f) => ({ ...f, initial_cash: e.target.value }))}
+                required
+              />
+              <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                Jumlah uang di kasir saat memulai shift.
+              </p>
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Catatan</label>
+              <textarea
+                value={openShiftForm.notes}
+                onChange={(e) => setOpenShiftForm((f) => ({ ...f, notes: e.target.value }))}
+                placeholder="Opsional"
+                rows={2}
+                className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button type="submit" disabled={openShiftSubmitting} className="flex-1">
+                {openShiftSubmitting ? "Membuka..." : "Buka Shift"}
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setOpenShiftModal(false)}>
+                Batal
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex h-[calc(100vh-8rem)] min-h-0 gap-4">
+    <div className="flex h-[calc(100vh-8rem)] min-h-0 flex-col gap-4">
+      <div className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--background)] px-4 py-2">
+        <div className="flex items-center gap-4">
+          <span className="rounded-full bg-emerald-100 px-3 py-1 text-sm font-medium text-emerald-700">
+            Shift aktif
+          </span>
+          <span className="text-sm text-[var(--muted-foreground)]">
+            Modal: {formatIdr(activeShift.initial_cash)} · Buka: {new Date(activeShift.opened_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+          </span>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => setCloseShiftModal(true)}>
+          Tutup Shift
+        </Button>
+      </div>
+      <div className="flex min-h-0 flex-1 gap-4">
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--background)]">
         <div className="border-b border-[var(--border)] p-4">
           <Input
@@ -528,6 +751,8 @@ export function PosPage() {
                   first && resolvePrice(p, first.unit_id) != null
                     ? formatIdr(resolvePrice(p, first.unit_id)!)
                     : "—";
+                const stockStatus = getStockStatus(Number(p.stock ?? 0));
+                const stockLabel = getStockStatusLabel(stockStatus);
                 return (
                   <button
                     key={p.id}
@@ -546,6 +771,20 @@ export function PosPage() {
                         </span>
                       )}
                     </span>
+                    {stockLabel && (
+                      <Badge
+                        variant={
+                          stockStatus === "minus"
+                            ? "destructive"
+                            : stockStatus === "empty"
+                              ? "destructive"
+                              : "warning"
+                        }
+                        className="mt-1.5 w-full justify-center"
+                      >
+                        {stockLabel} ({Number(p.stock)})
+                      </Badge>
+                    )}
                   </button>
                 );
               })}
@@ -619,6 +858,7 @@ export function PosPage() {
           </Button>
         </div>
       </div>
+      </div>
 
       <Modal
         open={!!addModal}
@@ -674,6 +914,21 @@ export function PosPage() {
               </div>
             </div>
             <div>
+              <label className="mb-1 block text-xs text-[var(--muted-foreground)]">Stok saat ini</label>
+              <p className="text-sm font-medium text-[var(--foreground)]">
+                {Number(addModal.product.stock ?? 0)} (dasar)
+                {(() => {
+                  const status = getStockStatus(Number(addModal.product.stock ?? 0));
+                  const label = getStockStatusLabel(status);
+                  return label ? (
+                    <Badge variant={status === "minus" || status === "empty" ? "destructive" : "warning"} className="ml-2">
+                      {label}
+                    </Badge>
+                  ) : null;
+                })()}
+              </p>
+            </div>
+            <div>
               <label className="mb-1 block text-xs text-[var(--muted-foreground)]">Jumlah</label>
               <Input
                 type="number"
@@ -683,6 +938,12 @@ export function PosPage() {
                   setAddModal({ ...addModal, qty: Math.max(1, parseInt(e.target.value, 10) || 1) })
                 }
               />
+              {addModal.selectedUnit &&
+                (addModal.qty * (addModal.selectedUnit.conversion_to_base ?? 1)) > Number(addModal.product.stock ?? 0) && (
+                  <p className="mt-1 text-xs text-amber-600">
+                    Jumlah melebihi stok. Konfirmasi akan diminta saat menambah ke keranjang.
+                  </p>
+                )}
             </div>
             <div className="flex gap-2">
               <Button className="flex-1" onClick={confirmAddToCart}>
@@ -881,6 +1142,51 @@ export function PosPage() {
           </div>
         </div>
       </Modal>
+
+      <Modal
+        open={closeShiftModal}
+        onClose={() => setCloseShiftModal(false)}
+        title="Tutup Shift"
+        size="sm"
+      >
+        <form onSubmit={handleCloseShift} className="space-y-4">
+          <div>
+            <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
+              Saldo Kas Akhir (Rp) *
+            </label>
+            <Input
+              type="number"
+              min="0"
+              step="1000"
+              placeholder="0"
+              value={closeShiftForm.end_cash}
+              onChange={(e) => setCloseShiftForm((f) => ({ ...f, end_cash: e.target.value }))}
+              required
+            />
+            <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+              Jumlah uang di kasir saat menutup shift.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button type="submit" disabled={closeShiftSubmitting} className="flex-1">
+              {closeShiftSubmitting ? "Menutup..." : "Tutup Shift"}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setCloseShiftModal(false)}>
+              Batal
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <ConfirmDialog
+        open={exceedStockConfirm.open}
+        onClose={() => setExceedStockConfirm((s) => ({ ...s, open: false }))}
+        onConfirm={exceedStockConfirm.onConfirm}
+        title={exceedStockConfirm.title}
+        message={exceedStockConfirm.message}
+        confirmLabel="Lanjutkan"
+        variant="default"
+      />
     </div>
   );
 }
