@@ -49,6 +49,8 @@ export function Dashboard() {
     payableUnpaid: 0,
     productCount: 0,
     outletCount: 0,
+    stockCapitalValue: 0,
+    stockPotentialValue: 0,
   });
   const [dailySales, setDailySales] = useState<DailySales[]>([]);
   const [cashFlowChart, setCashFlowChart] = useState<CashFlowData[]>([]);
@@ -89,8 +91,11 @@ export function Dashboard() {
         .from("payables")
         .select("amount, paid")
         .eq("organization_id", baseOrgId),
-      // Products count
-      supabase.from("products").select("id", { count: "exact", head: true }).eq("organization_id", baseOrgId),
+      // Products & stock value
+      supabase
+        .from("products")
+        .select("id, cost_price, selling_price, stock", { count: "exact" })
+        .eq("organization_id", baseOrgId),
       // Outlets count
       supabase.from("outlets").select("id", { count: "exact", head: true }).eq("organization_id", baseOrgId),
       // Recent orders
@@ -106,6 +111,8 @@ export function Dashboard() {
         const cashFlows = cashRes.data ?? [];
         const receivables = recRes.data ?? [];
         const payables = payRes.data ?? [];
+        const products =
+          (prodRes.data as { id: string; cost_price: number; selling_price: number; stock: number }[]) ?? [];
 
         const salesToday = orders
           .filter((o) => o.created_at >= todayStart)
@@ -139,6 +146,16 @@ export function Dashboard() {
           payUnpaid += Number(r.amount) - Number(r.paid ?? 0);
         });
 
+        let stockCapitalValue = 0;
+        let stockPotentialValue = 0;
+        products.forEach((p) => {
+          const stock = Number(p.stock ?? 0);
+          const hpp = Number(p.cost_price ?? 0);
+          const sell = Number(p.selling_price ?? 0);
+          stockCapitalValue += hpp * stock;
+          stockPotentialValue += sell * stock;
+        });
+
         setStats({
           salesToday,
           salesWeek,
@@ -151,6 +168,8 @@ export function Dashboard() {
           payableUnpaid: payUnpaid,
           productCount: prodRes.count ?? 0,
           outletCount: outRes.count ?? 0,
+          stockCapitalValue,
+          stockPotentialValue,
         });
 
         // Daily sales for chart (last N days)
@@ -261,6 +280,28 @@ export function Dashboard() {
             <p className="text-xs text-[var(--muted-foreground)]">
               Masuk {formatIdr(stats.cashIn)} / Keluar {formatIdr(stats.cashOut)}
             </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-[var(--muted-foreground)]">
+              Total Modal Barang
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-[var(--foreground)]">{formatIdr(stats.stockCapitalValue)}</p>
+            <p className="text-xs text-[var(--muted-foreground)]">HPP × qty stok</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-[var(--muted-foreground)]">
+              Potensi Nilai Jual Stok
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-[var(--primary)]">{formatIdr(stats.stockPotentialValue)}</p>
+            <p className="text-xs text-[var(--muted-foreground)]">Harga jual tertinggi × qty stok</p>
           </CardContent>
         </Card>
       </div>

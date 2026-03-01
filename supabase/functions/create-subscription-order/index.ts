@@ -121,7 +121,11 @@ Deno.serve(async (req) => {
       status: "pending",
     });
 
-    return new Response(JSON.stringify({ snapToken: midtransData.token, orderId }), {
+    return new Response(JSON.stringify({
+      snapToken: midtransData.token,
+      redirectUrl: midtransData.redirect_url ?? null,
+      orderId,
+    }), {
       headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
     });
   } catch (err) {

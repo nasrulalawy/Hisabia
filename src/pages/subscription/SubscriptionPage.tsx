@@ -75,7 +75,11 @@ export function SubscriptionPage() {
   }, [orgId]);
 
   async function handlePay(plan: SubscriptionPlan) {
-    if (!orgId || !clientKey) return;
+    if (!orgId) return;
+    if (!clientKey) {
+      alert("Konfigurasi pembayaran (Midtrans) belum diatur. Hubungi admin untuk mengaktifkan VITE_MIDTRANS_CLIENT_KEY.");
+      return;
+    }
     const amount = Number(plan.price_monthly) || 0;
     if (amount < 1) return;
     setPayLoading(plan.id);
@@ -84,13 +88,15 @@ export function SubscriptionPage() {
         body: { organization_id: orgId, plan_id: plan.id },
       });
       if (error) throw new Error(error.message || "Gagal membuat order");
-      const json = data as { snapToken?: string; error?: string };
+      const json = data as { snapToken?: string; redirectUrl?: string; error?: string };
       if (json?.error) throw new Error(json.error);
       const snapToken = json?.snapToken;
+      const redirectUrl = json?.redirectUrl;
       if (!snapToken) throw new Error("Token tidak diterima");
 
-      if (typeof (window as unknown as { snap?: { pay: (t: string, o?: object) => void } }).snap?.pay === "function") {
-        (window as unknown as { snap: { pay: (t: string, o?: object) => void } }).snap.pay(snapToken, {
+      const snap = (window as unknown as { snap?: { pay: (t: string, o?: object) => void } }).snap;
+      if (typeof snap?.pay === "function") {
+        snap.pay(snapToken, {
           onSuccess: () => {
             loadSubscription();
             setPayLoading(null);
@@ -111,8 +117,38 @@ export function SubscriptionPage() {
           onClose: () => setPayLoading(null),
         });
       } else {
-        window.location.href = `https://app.midtrans.com/snap/v2/vtweb/${snapToken}`;
-        setPayLoading(null);
+        // Snap script mungkin belum selesai dimuat; tunggu sebentar lalu coba lagi
+        await new Promise((r) => setTimeout(r, 2000));
+        const snapRetry = (window as unknown as { snap?: { pay: (t: string, o?: object) => void } }).snap;
+        if (typeof snapRetry?.pay === "function") {
+          snapRetry.pay(snapToken, {
+            onSuccess: () => {
+              loadSubscription();
+              setPayLoading(null);
+              navigate(`/org/${orgId}/subscription/success`, {
+                state: { planName: plan.name, amount: Number(plan.price_monthly) },
+              });
+            },
+            onPending: () => {
+              loadSubscription();
+              setPayLoading(null);
+              navigate(`/org/${orgId}/subscription/success`, {
+                state: { planName: plan.name, amount: Number(plan.price_monthly), pending: true },
+              });
+            },
+            onError: () => setPayLoading(null),
+            onClose: () => setPayLoading(null),
+          });
+        } else {
+          const url = redirectUrl ?? (() => {
+            const baseUrl = import.meta.env.VITE_MIDTRANS_IS_PRODUCTION === "true"
+              ? "https://app.midtrans.com"
+              : "https://app.sandbox.midtrans.com";
+            return `${baseUrl}/snap/v2/vtweb/${snapToken}`;
+          })();
+          window.location.href = url;
+          setPayLoading(null);
+        }
       }
     } catch (err) {
       alert((err as Error).message);
@@ -157,9 +193,10 @@ export function SubscriptionPage() {
             </p>
             {plans.length > 0 && (
               <Button
-                className="mt-4"
+                type="button"
+                className="mt-4 cursor-pointer"
                 onClick={() => handlePay(plans[0])}
-                disabled={!!payLoading || Number(plans[0]?.price_monthly) < 1}
+                disabled={!!payLoading || !clientKey || Number(plans[0]?.price_monthly) < 1}
               >
                 {payLoading ? "Memproses..." : "Bayar Paket Basic"}
               </Button>
@@ -257,6 +294,11 @@ export function SubscriptionPage() {
 
       <div>
         <h3 className="mb-4 text-lg font-semibold text-[var(--foreground)]">Paket Tersedia</h3>
+        {!clientKey && (
+          <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+            Konfigurasi pembayaran (Midtrans) belum diatur. Tombol Bayar akan aktif setelah admin mengatur VITE_MIDTRANS_CLIENT_KEY di environment.
+          </p>
+        )}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {plans.map((plan) => {
             const isCurrent = currentPlan?.id === plan.id;
@@ -288,10 +330,11 @@ export function SubscriptionPage() {
                   )}
                   {!isCurrent && Number(plan.price_monthly) > 0 && (
                     <Button
+                      type="button"
                       variant="primary"
                       size="sm"
-                      className="w-full"
-                      disabled={!!payLoading}
+                      className="w-full cursor-pointer"
+                      disabled={!!payLoading || !clientKey}
                       onClick={() => handlePay(plan)}
                     >
                       {payLoading === plan.id ? "Memproses..." : "Bayar Sekarang"}
