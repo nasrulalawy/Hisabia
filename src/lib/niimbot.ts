@@ -90,7 +90,35 @@ export interface NiimbotConnection {
   disconnect(): void;
 }
 
+/** Koneksi yang sudah di-cache (hubungkan sekali di Pengaturan, dipakai untuk cetak di POS/dll). */
+let cachedConnection: {
+  conn: NiimbotConnection;
+  server: BluetoothRemoteGATTServer;
+} | null = null;
+
+/** Mengembalikan koneksi NiiMBot yang aktif (jika sudah dihubungkan dari Pengaturan). */
+export function getNiimbotConnection(): NiimbotConnection | null {
+  if (cachedConnection && cachedConnection.server.connected) return cachedConnection.conn;
+  cachedConnection = null;
+  return null;
+}
+
+/** Putus koneksi dan hapus cache. Dipanggil dari halaman Pengaturan. */
+export function disconnectNiimbot(): void {
+  if (cachedConnection) {
+    cachedConnection.conn.disconnect();
+    cachedConnection = null;
+  }
+}
+
+/**
+ * Hubungkan printer NiiMBot via Bluetooth (hanya dipanggil dari Pengaturan).
+ * Koneksi di-cache untuk dipakai saat cetak dari POS / detail produk.
+ */
 export async function connectNiimbot(): Promise<NiimbotConnection> {
+  const existing = getNiimbotConnection();
+  if (existing) return existing;
+
   if (!navigator.bluetooth) {
     throw new Error("Browser tidak mendukung Bluetooth. Gunakan Chrome/Edge dan pastikan HTTPS.");
   }
@@ -108,16 +136,16 @@ export async function connectNiimbot(): Promise<NiimbotConnection> {
     server.disconnect();
     throw new Error("Karakteristik NiiMBot tidak ditemukan.");
   }
-  const write = char.properties.writeWithoutResponse
+  const writeChar = char.properties.writeWithoutResponse
     ? (data: Uint8Array) => char.writeValueWithoutResponse(data as BufferSource)
     : (data: Uint8Array) => char.writeValueWithResponse(data as BufferSource);
 
-  return {
+  const conn: NiimbotConnection = {
     async write(data: Uint8Array) {
       const CHUNK = 80;
       const DELAY_MS = 18;
       for (let i = 0; i < data.length; i += CHUNK) {
-        await write(data.slice(i, i + CHUNK));
+        await writeChar(data.slice(i, i + CHUNK));
         if (DELAY_MS > 0) await delay(DELAY_MS);
       }
     },
@@ -125,6 +153,8 @@ export async function connectNiimbot(): Promise<NiimbotConnection> {
       server.disconnect();
     },
   };
+  cachedConnection = { conn, server };
+  return conn;
 }
 
 /** Heartbeat agar printer tidak disconnect (protocol Advanced 1). */
@@ -136,63 +166,66 @@ function buildHeartbeat(): Uint8Array {
  * Print a label with the given text lines to NiiMBot.
  * Uses B1-style sequence: SetDensity, SetLabelType, PrintStart, PageStart, SetPageSize, rows, PageEnd, PrintEnd.
  */
+const NIIMBOT_NOT_CONNECTED_MSG =
+  "Printer NiiMBot belum terhubung. Hubungkan di Pengaturan Toko terlebih dahulu.";
+
 export async function printLabelNiimbot(lines: string[]): Promise<void> {
   const widthPx = 384;
   const heightPx = 128;
   const bitmapRows = renderLabelToBitmap(lines, widthPx, heightPx);
   if (bitmapRows.length === 0) throw new Error("Gagal render label.");
 
-  const conn = await connectNiimbot();
-  try {
-    await delay(100);
-    await conn.write(buildHeartbeat());
+  const conn = getNiimbotConnection();
+  if (!conn) throw new Error(NIIMBOT_NOT_CONNECTED_MSG);
 
-    await conn.write(buildPacket(0x21, [0x01]));
-    await conn.write(buildPacket(0x23, [0x00]));
-    await conn.write(buildPacket(0x01, [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]));
-    await delay(50);
-    await conn.write(buildPacket(0xa3, [0x01]));
-    await delay(30);
-    await conn.write(buildPacket(0x03, [0x01]));
-    const rowsLo = heightPx & 0xff;
-    const rowsHi = (heightPx >> 8) & 0xff;
-    const colsLo = widthPx & 0xff;
-    const colsHi = (widthPx >> 8) & 0xff;
-    await conn.write(buildPacket(0x13, [rowsLo, rowsHi, colsLo, colsHi, 0x01, 0x00]));
+  await delay(100);
+  await conn.write(buildHeartbeat());
 
-    for (let row = 0; row < bitmapRows.length; row++) {
-      if (row > 0 && row % 40 === 0) {
-        await conn.write(buildHeartbeat());
-        await delay(40);
-      }
-      const rowData = bitmapRows[row];
-      const blackCount = countBits(rowData);
-      const isEmpty = blackCount === 0;
-      if (isEmpty) {
-        const pkt = buildPacket(0x84, [row & 0xff, (row >> 8) & 0xff, 0x01]);
-        await conn.write(pkt);
-      } else {
-        const data = [
-          row & 0xff,
-          (row >> 8) & 0xff,
-          0x01,
-          0x00,
-          blackCount & 0xff,
-          (blackCount >> 8) & 0xff,
-          ...rowData,
-        ];
-        const pkt = buildPacket(0x85, data);
-        await conn.write(pkt);
-      }
+  await conn.write(buildPacket(0x21, [0x01]));
+  await conn.write(buildPacket(0x23, [0x00]));
+  await conn.write(buildPacket(0x01, [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]));
+  await delay(50);
+  await conn.write(buildPacket(0xa3, [0x01]));
+  await delay(30);
+  await conn.write(buildPacket(0x03, [0x01]));
+  const rowsLo = heightPx & 0xff;
+  const rowsHi = (heightPx >> 8) & 0xff;
+  const colsLo = widthPx & 0xff;
+  const colsHi = (widthPx >> 8) & 0xff;
+  await conn.write(buildPacket(0x13, [rowsLo, rowsHi, colsLo, colsHi, 0x01, 0x00]));
+
+  for (let row = 0; row < bitmapRows.length; row++) {
+    if (row > 0 && row % 40 === 0) {
+      await conn.write(buildHeartbeat());
+      await delay(40);
     }
-
-    await conn.write(buildPacket(0xe3, [0x01]));
-    await delay(50);
-    await conn.write(buildPacket(0xf3, [0x01]));
-    await delay(100);
-  } finally {
-    conn.disconnect();
+    const rowData = bitmapRows[row];
+    const blackCount = countBits(rowData);
+    const isEmpty = blackCount === 0;
+    if (isEmpty) {
+      const pkt = buildPacket(0x84, [row & 0xff, (row >> 8) & 0xff, 0x01]);
+      await conn.write(pkt);
+    } else {
+      const data = [
+        row & 0xff,
+        (row >> 8) & 0xff,
+        0x01,
+        0x00,
+        blackCount & 0xff,
+        (blackCount >> 8) & 0xff,
+        ...rowData,
+      ];
+      const pkt = buildPacket(0x85, data);
+      await conn.write(pkt);
+    }
   }
+
+  await conn.write(buildPacket(0xe3, [0x01]));
+  await delay(80);
+  await conn.write(buildPacket(0xf3, [0x01]));
+  // Tunggu printer selesai cetak fisik (roll, thermal)
+  await delay(2500);
+  // Tidak disconnect: koneksi dipakai lagi untuk cetak berikutnya (hanya putus dari Pengaturan).
 }
 
 // --- Label content (what to show on the label) ---

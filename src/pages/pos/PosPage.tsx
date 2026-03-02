@@ -1222,6 +1222,9 @@ export function PosPage() {
                   {niimbotLabelPrinting ? "Mencetak..." : "Label NiiMBot"}
                 </Button>
               </div>
+              <p className="text-center text-xs text-[var(--muted-foreground)]">
+                Hubungkan printer NiiMBot di Pengaturan Toko, lalu gunakan tombol ini untuk cetak.
+              </p>
               {(bluetoothPrintError || niimbotLabelError) && (
                 <p className="text-center text-xs text-red-600">{bluetoothPrintError ?? niimbotLabelError}</p>
               )}

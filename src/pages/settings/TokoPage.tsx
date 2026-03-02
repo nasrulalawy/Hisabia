@@ -14,6 +14,9 @@ import {
   getNiimbotLabelFields,
   setNiimbotLabelFields,
   NIIMBOT_LABEL_FIELD_OPTIONS,
+  connectNiimbot,
+  disconnectNiimbot,
+  getNiimbotConnection,
   type NiimbotLabelFieldId,
 } from "@/lib/niimbot";
 
@@ -29,6 +32,13 @@ export function TokoPage() {
 
   const [localPrintUrl, setLocalPrintUrl] = useState("http://localhost:3999");
   const [niimbotLabelFields, setNiimbotLabelFieldsState] = useState<NiimbotLabelFieldId[]>([]);
+  const [niimbotConnected, setNiimbotConnected] = useState(false);
+  const [niimbotConnecting, setNiimbotConnecting] = useState(false);
+  const [niimbotConnError, setNiimbotConnError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setNiimbotConnected(!!getNiimbotConnection());
+  }, []);
 
   useEffect(() => {
     setReceiptPrinter(getReceiptPrinterType());
@@ -199,6 +209,53 @@ export function TokoPage() {
 
       <div className="max-w-md space-y-4 border-t border-[var(--border)] pt-6">
         <h3 className="text-lg font-medium text-[var(--foreground)]">Label NiiMBot</h3>
+        <p className="text-sm text-[var(--muted-foreground)]">
+          Hubungkan printer NiiMBot di sini sekali. Di POS dan detail produk, tombol cetak label hanya akan
+          mencetak ke printer yang sudah terhubung.
+        </p>
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--muted)]/20 p-4">
+          <span className="text-sm font-medium text-[var(--foreground)]">
+            {niimbotConnected ? "Printer terhubung" : "Printer belum terhubung"}
+          </span>
+          {niimbotConnected ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                disconnectNiimbot();
+                setNiimbotConnected(false);
+                setNiimbotConnError(null);
+              }}
+            >
+              Putuskan
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={niimbotConnecting || !("bluetooth" in navigator && navigator.bluetooth)}
+              onClick={async () => {
+                setNiimbotConnecting(true);
+                setNiimbotConnError(null);
+                try {
+                  await connectNiimbot();
+                  setNiimbotConnected(true);
+                } catch (err) {
+                  setNiimbotConnError(err instanceof Error ? err.message : "Gagal menghubungkan NiiMBot");
+                } finally {
+                  setNiimbotConnecting(false);
+                }
+              }}
+            >
+              {niimbotConnecting ? "Menghubungkan..." : "Hubungkan NiiMBot"}
+            </Button>
+          )}
+        </div>
+        {niimbotConnError && (
+          <p className="text-sm text-red-600">{niimbotConnError}</p>
+        )}
         <p className="text-sm text-[var(--muted-foreground)]">
           Atur isi label yang dicetak ke printer NiiMBot (Bluetooth). Urutan field = urutan baris di label.
         </p>
