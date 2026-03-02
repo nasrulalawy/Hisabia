@@ -20,6 +20,8 @@ import { HutangPiutangPage } from "@/pages/crud/HutangPiutangPage";
 import { GudangPage } from "@/pages/crud/GudangPage";
 import { StokPage } from "@/pages/stok/StokPage";
 import { StokTokoPage } from "@/pages/stok/StokTokoPage";
+import { OpnameListPage } from "@/pages/stok/OpnameListPage";
+import { OpnameDetailPage } from "@/pages/stok/OpnameDetailPage";
 import { PembelianPage } from "@/pages/pembelian/PembelianPage";
 import { OutletsPage } from "@/pages/crud/OutletsPage";
 import { PosPage } from "@/pages/pos/PosPage";
@@ -153,6 +155,8 @@ export default function App() {
           <Route path="pembelian" element={<PembelianPage />} />
           <Route path="stok" element={<StokPage />} />
           <Route path="stok-toko" element={<StokTokoPage />} />
+          <Route path="opname" element={<OpnameListPage />} />
+          <Route path="opname/:sessionId" element={<OpnameDetailPage />} />
           <Route path="gudang" element={<GudangPage />} />
           <Route path="outlets" element={<OutletsPage />} />
           <Route path="subscription" element={<SubscriptionPage />} />

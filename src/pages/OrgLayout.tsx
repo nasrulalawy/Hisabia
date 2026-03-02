@@ -31,6 +31,7 @@ export function OrgLayout() {
   const [currentOutletId, setCurrentOutletId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [trialExpired, setTrialExpired] = useState(false);
+  const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
 
   useEffect(() => {
     if (!orgId) return;
@@ -126,18 +127,24 @@ export function OrgLayout() {
       }}
     >
       <div className="flex h-screen overflow-hidden bg-[var(--muted)]">
-        <Sidebar basePath={basePath} outletType={currentOutletType} />
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <Header
-          user={{
-            name: profile?.full_name ?? user?.email ?? undefined,
-            role,
-          }}
-          outlets={outlets}
-          currentOutletId={currentOutletId}
-          orgId={orgId}
+        <Sidebar
+          basePath={basePath}
+          outletType={currentOutletType}
+          mobileOpen={sidebarMobileOpen}
+          onMobileClose={() => setSidebarMobileOpen(false)}
         />
-        <main className="flex-1 overflow-auto p-6">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <Header
+            user={{
+              name: profile?.full_name ?? user?.email ?? undefined,
+              role,
+            }}
+            outlets={outlets}
+            currentOutletId={currentOutletId}
+            orgId={orgId}
+            onMenuClick={() => setSidebarMobileOpen(true)}
+          />
+        <main className="flex-1 overflow-auto p-4 sm:p-6">
           {trialExpired && (
             <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800">
               <p className="font-medium">Masa trial 14 hari telah berakhir.</p>

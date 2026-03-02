@@ -17,6 +17,16 @@ export function formatIdr(n: number): string {
   }).format(n);
 }
 
+/** Format number as IDR currency, no decimal places */
+export function formatIdrWhole(n: number): string {
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(Math.round(n));
+}
+
 /**
  * Parse price string supporting Indonesian format:
  * - "10.000" = 10000 (titik = pemisah ribuan)

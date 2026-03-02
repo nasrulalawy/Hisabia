@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
-import { formatIdr, formatDate } from "@/lib/utils";
+import { formatIdr, formatIdrWhole, formatDate } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import {
   BarChart,
@@ -230,7 +230,7 @@ export function Dashboard() {
       </div>
 
       {/* Stats cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-[var(--muted-foreground)]">
@@ -289,7 +289,7 @@ export function Dashboard() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-[var(--foreground)]">{formatIdr(stats.stockCapitalValue)}</p>
+            <p className="text-2xl font-bold text-[var(--foreground)]">{formatIdrWhole(stats.stockCapitalValue)}</p>
             <p className="text-xs text-[var(--muted-foreground)]">HPP × qty stok</p>
           </CardContent>
         </Card>
@@ -300,7 +300,7 @@ export function Dashboard() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-[var(--primary)]">{formatIdr(stats.stockPotentialValue)}</p>
+            <p className="text-2xl font-bold text-[var(--primary)]">{formatIdrWhole(stats.stockPotentialValue)}</p>
             <p className="text-xs text-[var(--muted-foreground)]">Harga jual tertinggi × qty stok</p>
           </CardContent>
         </Card>

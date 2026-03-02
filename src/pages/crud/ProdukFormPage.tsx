@@ -29,6 +29,7 @@ export function ProdukFormPage() {
     cost_price: "0",
     selling_price: "0",
     stock: "0",
+    barcode: "",
     is_available: true,
   });
 
@@ -72,6 +73,7 @@ export function ProdukFormPage() {
       cost_price: fmt(data.cost_price ?? 0),
       selling_price: fmt(data.selling_price ?? 0),
       stock: fmt(data.stock ?? 0),
+      barcode: data.barcode ?? "",
       is_available: data.is_available ?? true,
     });
   }
@@ -102,6 +104,7 @@ export function ProdukFormPage() {
       cost_price: parsePriceIdr(form.cost_price) || 0,
       selling_price: parsePriceIdr(form.selling_price) || 0,
       stock: parsePriceIdr(form.stock) || 0,
+      barcode: form.barcode.trim() || null,
       is_available: form.is_available,
     };
     if (isEdit) {
@@ -253,6 +256,18 @@ export function ProdukFormPage() {
                   placeholder="0 atau 10.000"
                 />
               </div>
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Barcode / SKU (untuk scan di POS)</label>
+              <Input
+                type="text"
+                value={form.barcode}
+                onChange={(e) => setForm((f) => ({ ...f, barcode: e.target.value }))}
+                placeholder="Kosongkan jika tidak pakai scan"
+              />
+              <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                Isi barcode atau SKU produk. Unik per toko. Dipakai untuk scan kamera di POS.
+              </p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>

@@ -199,6 +199,7 @@ export interface Product {
   cost_price: number;
   selling_price: number;
   stock: number;
+  barcode: string | null;
   image_url: string | null;
   is_available: boolean;
   created_at: string;
@@ -275,10 +276,35 @@ export interface Warehouse {
 export interface StockMovement {
   id: string;
   organization_id: string;
-  warehouse_id: string;
+  warehouse_id: string | null;
   product_id: string;
   type: "in" | "out" | "adjust";
   quantity: number;
   notes: string | null;
   created_at: string;
+}
+
+export type StockOpnameStatus = "draft" | "finalized";
+
+export interface StockOpnameSession {
+  id: string;
+  organization_id: string;
+  warehouse_id: string | null;
+  status: StockOpnameStatus;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  finalized_at: string | null;
+}
+
+export interface StockOpnameLine {
+  id: string;
+  opname_session_id: string;
+  product_id: string;
+  system_qty: number;
+  physical_qty: number | null;
+  adjustment_qty: number;
+  variance_reason: string | null;
+  created_at: string;
+  updated_at: string;
 }

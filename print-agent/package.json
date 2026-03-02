@@ -1,0 +1,21 @@
+{
+  "name": "hisabia-print-agent",
+  "version": "1.0.0",
+  "description": "Aplikasi kecil untuk cetak struk direct dari browser Hisabia (tanpa dialog print)",
+  "main": "server.js",
+  "bin": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "build:exe": "pkg . --targets node18-win-x64 --output dist/hisabia-print-agent.exe",
+    "build:installer": "npm run build:exe && iscc installer.iss"
+  },
+  "pkg": {
+    "outputPath": "dist"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1"
+  }
+}

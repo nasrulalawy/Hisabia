@@ -7,6 +7,15 @@ import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Badge } from "@/components/ui/Badge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { BarcodeScanner } from "@/components/pos/BarcodeScanner";
+import {
+  type ReceiptData,
+  printReceiptInWindow,
+  printReceiptBluetooth,
+  printReceiptLocal,
+  getReceiptPrinterType,
+  getReceiptLocalUrl,
+} from "@/lib/receipt";
 
 interface ProductUnitRow {
   id: string;
@@ -34,6 +43,7 @@ interface ProductWithCategory {
   is_available: boolean;
   default_unit_id: string | null;
   category_id?: string | null;
+  barcode?: string | null;
 }
 
 interface ProductMeta {
@@ -73,7 +83,7 @@ function getCashDenominationOptions(total: number): number[] {
 }
 
 export function PosPage() {
-  const { orgId, currentOutletId, currentOutletType } = useOrg();
+  const { orgId, currentOutletId, currentOutlet, currentOutletType } = useOrg();
   const [products, setProducts] = useState<ProductWithCategory[]>([]);
   const [productMeta, setProductMeta] = useState<Record<string, ProductMeta>>({});
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
@@ -94,7 +104,10 @@ export function PosPage() {
     qty: number;
     selectedUnit: ProductUnitRow | null;
     priceType: "retail" | "grosir" | "grosir_besar";
+    editCartKey?: string;
   } | null>(null);
+  const [scanModalOpen, setScanModalOpen] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
   const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
   const [cashReceived, setCashReceived] = useState<number>(0);
   const [debtMode, setDebtMode] = useState<"full" | "partial" | null>(null);
@@ -113,6 +126,73 @@ export function PosPage() {
     message: string;
     onConfirm: () => void;
   }>({ open: false, title: "", message: "", onConfirm: () => {} });
+  const [selectedCartIndex, setSelectedCartIndex] = useState<number | null>(null);
+  const [lastReceipt, setLastReceipt] = useState<ReceiptData | null>(null);
+  const [bluetoothPrinting, setBluetoothPrinting] = useState(false);
+  const [bluetoothPrintError, setBluetoothPrintError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (cart.length === 0) setSelectedCartIndex(null);
+    else if (selectedCartIndex !== null && selectedCartIndex >= cart.length) {
+      setSelectedCartIndex(Math.max(0, cart.length - 1));
+    }
+  }, [cart.length, selectedCartIndex]);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const inInput = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName ?? "");
+      if (addModal || scanModalOpen || exceedStockConfirm.open) return;
+
+      if (checkoutModalOpen) {
+        if (e.key === "Enter" && !inInput) {
+          e.preventDefault();
+          if (e.shiftKey) checkout({ printAfter: false });
+          else checkout({ printAfter: true });
+          return;
+        }
+        return;
+      }
+
+      if (inInput) return;
+
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (cart.length > 0) openCheckoutModal();
+        return;
+      }
+
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (cart.length === 0) return;
+        setSelectedCartIndex((i) => (i === null ? 0 : Math.min((i ?? 0) + 1, cart.length - 1)));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (cart.length === 0) return;
+        setSelectedCartIndex((i) => (i === null ? cart.length - 1 : Math.max((i ?? 0) - 1, 0)));
+        return;
+      }
+      if (e.key === "F2") {
+        e.preventDefault();
+        if (selectedCartIndex !== null && cart[selectedCartIndex]) {
+          openEditCartItem(cart[selectedCartIndex]);
+        }
+        return;
+      }
+      if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        if (selectedCartIndex !== null && cart[selectedCartIndex]) {
+          removeCartItem(cart[selectedCartIndex].productId, cart[selectedCartIndex].unitId);
+          const newLen = cart.length - 1;
+          setSelectedCartIndex(newLen === 0 ? null : Math.min(selectedCartIndex, newLen - 1));
+        }
+        return;
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [cart, selectedCartIndex, addModal, checkoutModalOpen, scanModalOpen, exceedStockConfirm.open]);
 
   async function fetchActiveShift() {
     if (!currentOutletId) return;
@@ -187,7 +267,7 @@ export function PosPage() {
     try {
       const { data: prods, error: prodsErr } = await supabase
         .from("products")
-        .select("id, name, stock, selling_price, cost_price, is_available, default_unit_id, category_id")
+        .select("id, name, stock, selling_price, cost_price, is_available, default_unit_id, category_id, barcode")
         .eq("organization_id", orgId)
         .order("name");
 
@@ -352,7 +432,7 @@ export function PosPage() {
 
   function doAddToCart() {
     if (!addModal) return;
-    const { product, qty, selectedUnit, priceType: pt } = addModal;
+    const { product, qty, selectedUnit, priceType: pt, editCartKey } = addModal;
     if (!selectedUnit || qty < 1) return;
     const unitId = selectedUnit.unit_id;
     const price = resolvePrice(product, unitId, pt);
@@ -360,10 +440,14 @@ export function PosPage() {
     const unitSymbol = selectedUnit.units?.symbol ?? "pcs";
     const conversionToBase = selectedUnit.conversion_to_base ?? 1;
 
-    const existing = cart.find((c) => c.productId === product.id && c.unitId === unitId);
+    let nextCart = cart;
+    if (editCartKey) {
+      nextCart = cart.filter((c) => `${c.productId}-${c.unitId}` !== editCartKey);
+    }
+    const existing = nextCart.find((c) => c.productId === product.id && c.unitId === unitId);
     if (existing) {
       setCart(
-        cart.map((c) =>
+        nextCart.map((c) =>
           c.productId === product.id && c.unitId === unitId
             ? { ...c, qty: c.qty + qty }
             : c
@@ -371,7 +455,7 @@ export function PosPage() {
       );
     } else {
       setCart([
-        ...cart,
+        ...nextCart,
         {
           productId: product.id,
           unitId,
@@ -388,14 +472,17 @@ export function PosPage() {
 
   function confirmAddToCart() {
     if (!addModal) return;
-    const { product, qty, selectedUnit, priceType: pt } = addModal;
+    const { product, qty, selectedUnit, priceType: pt, editCartKey } = addModal;
     if (!selectedUnit || qty < 1) return;
     const unitId = selectedUnit.unit_id;
     const price = resolvePrice(product, unitId, pt);
     if (price == null) return;
     const conversionToBase = selectedUnit.conversion_to_base ?? 1;
 
-    const existing = cart.find((c) => c.productId === product.id && c.unitId === unitId);
+    const cartWithoutEdit = editCartKey
+      ? cart.filter((c) => `${c.productId}-${c.unitId}` !== editCartKey)
+      : cart;
+    const existing = cartWithoutEdit.find((c) => c.productId === product.id && c.unitId === unitId);
     const existingQtyBase = (existing ? existing.qty * existing.conversionToBase : 0);
     const newQtyBase = qty * conversionToBase;
     const totalQtyBase = existingQtyBase + newQtyBase;
@@ -425,6 +512,91 @@ export function PosPage() {
     openAddModal(product);
   }
 
+  function openEditCartItem(item: CartItem) {
+    const product = products.find((p) => p.id === item.productId);
+    if (!product) return;
+    const units = getUnitsForProduct(product);
+    const selectedUnit = units.find((u) => u.unit_id === item.unitId) ?? units[0];
+    if (!selectedUnit) return;
+    setAddModal({
+      product,
+      qty: item.qty,
+      selectedUnit,
+      priceType: "retail",
+      editCartKey: `${item.productId}-${item.unitId}`,
+    });
+  }
+
+  /** Menambah produk ke keranjang berdasarkan barcode/kode. Returns true jika berhasil. */
+  function addToCartByBarcode(barcode: string): boolean {
+    const code = barcode.trim();
+    if (!code) return false;
+    const product = products.find(
+      (p) => p.barcode != null && String(p.barcode).trim() !== "" && String(p.barcode).trim().toLowerCase() === code.toLowerCase()
+    );
+    if (!product) return false;
+    if (!product.is_available) return false;
+    const units = getUnitsForProduct(product);
+    const first = units[0];
+    if (!first) return false;
+    const price = resolvePrice(product, first.unit_id, "retail");
+    if (price == null) return false;
+    const existing = cart.find((c) => c.productId === product.id && c.unitId === first.unit_id);
+    if (existing) {
+      setCart(
+        cart.map((c) =>
+          c.productId === product.id && c.unitId === first.unit_id
+            ? { ...c, qty: c.qty + 1 }
+            : c
+        )
+      );
+    } else {
+      setCart([
+        ...cart,
+        {
+          productId: product.id,
+          unitId: first.unit_id,
+          unitSymbol: first.units?.symbol ?? "pcs",
+          conversionToBase: first.conversion_to_base ?? 1,
+          name: product.name,
+          price,
+          qty: 1,
+        },
+      ]);
+    }
+    return true;
+  }
+
+  function handleBarcodeScan(barcode: string) {
+    setScanError(null);
+    const code = barcode.trim();
+    if (!code) return;
+    const product = products.find(
+      (p) => p.barcode != null && String(p.barcode).trim() !== "" && String(p.barcode).trim().toLowerCase() === code.toLowerCase()
+    );
+    if (!product) {
+      setScanError(`Produk dengan barcode "${code}" tidak ditemukan. Isi barcode di data produk.`);
+      return;
+    }
+    if (!product.is_available) {
+      setScanError("Produk tidak aktif.");
+      return;
+    }
+    addToCartByBarcode(code);
+    setScanModalOpen(false);
+    setScanError(null);
+  }
+
+  function handleSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== "Enter") return;
+    const code = search.trim();
+    if (!code) return;
+    e.preventDefault();
+    if (addToCartByBarcode(code)) {
+      setSearch("");
+    }
+  }
+
   function doUpdateQty(productId: string, unitId: string, delta: number) {
     setCart(
       cart
@@ -435,6 +607,10 @@ export function PosPage() {
         )
         .filter((c) => c.qty > 0)
     );
+  }
+
+  function removeCartItem(productId: string, unitId: string) {
+    setCart(cart.filter((c) => !(c.productId === productId && c.unitId === unitId)));
   }
 
   function updateQty(productId: string, unitId: string, delta: number) {
@@ -478,7 +654,7 @@ export function PosPage() {
     setCheckoutModalOpen(false);
   }
 
-  async function checkout() {
+  async function checkout(options?: { printAfter?: boolean }) {
     if (!orgId || !currentOutletId || !activeShift || cart.length === 0) return;
     setCheckoutLoading(true);
     setSuccessMsg(null);
@@ -579,6 +755,25 @@ export function PosPage() {
       });
     }
 
+    const receiptData: ReceiptData = {
+      orderId: order.id.slice(0, 8),
+      outletName: currentOutlet?.name ?? "Toko",
+      date: new Date(),
+      items: cart.map((c) => ({
+        name: c.name,
+        qty: c.qty,
+        unit: c.unitSymbol,
+        price: c.price,
+        lineTotal: c.price * c.qty,
+      })),
+      subtotal,
+      discount: discountAmount,
+      total: finalTotal,
+      paymentMethod: orderPaymentMethod,
+      notes: notes.trim() || undefined,
+    };
+    setLastReceipt(receiptData);
+
     setCart([]);
     setNotes("");
     setSelectedCustomerId(null);
@@ -593,6 +788,21 @@ export function PosPage() {
     );
     setCheckoutLoading(false);
     setTimeout(() => setSuccessMsg(null), 3000);
+
+    if (options?.printAfter) {
+      const printerType = getReceiptPrinterType();
+      try {
+        if (printerType === "bluetooth" && navigator.bluetooth) {
+          await printReceiptBluetooth(receiptData);
+        } else if (printerType === "local") {
+          await printReceiptLocal(receiptData, getReceiptLocalUrl());
+        } else {
+          printReceiptInWindow(receiptData);
+        }
+      } catch (err) {
+        console.error("Auto-print struk gagal:", err);
+      }
+    }
   }
 
   if (!currentOutletId) {
@@ -682,34 +892,50 @@ export function PosPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] min-h-0 flex-col gap-4">
-      <div className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--background)] px-4 py-2">
-        <div className="flex items-center gap-4">
+    <div className="flex h-[calc(100vh-6rem)] min-h-0 flex-col gap-3 sm:h-[calc(100vh-8rem)] sm:gap-4">
+      <div className="flex flex-col gap-2 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-4">
           <span className="rounded-full bg-emerald-100 px-3 py-1 text-sm font-medium text-emerald-700">
             Shift aktif
           </span>
-          <span className="text-sm text-[var(--muted-foreground)]">
+          <span className="text-xs text-[var(--muted-foreground)] sm:text-sm">
             Modal: {formatIdr(activeShift.initial_cash)} · Buka: {new Date(activeShift.opened_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
           </span>
         </div>
-        <Button variant="outline" size="sm" onClick={() => setCloseShiftModal(true)}>
+        <Button variant="outline" size="sm" onClick={() => setCloseShiftModal(true)} className="min-h-10 touch-manipulation sm:min-h-0">
           Tutup Shift
         </Button>
       </div>
-      <div className="flex min-h-0 flex-1 gap-4">
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--background)]">
-        <div className="border-b border-[var(--border)] p-4">
-          <Input
-            placeholder="Cari produk..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="mb-3"
-          />
+      <div className="flex min-h-0 flex-1 flex-col gap-3 md:flex-row md:gap-4">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--background)]">
+        <div className="shrink-0 border-b border-[var(--border)] p-3 sm:p-4">
+          <div className="mb-3 flex gap-2">
+            <Input
+              placeholder="Cari produk atau scan barcode (ketik kode + Enter)"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={handleSearchKeyDown}
+              className="min-w-0 flex-1"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => { setScanError(null); setScanModalOpen(true); }}
+              className="shrink-0 touch-manipulation"
+              title="Scan barcode/QR"
+            >
+              <svg className="h-5 w-5 sm:mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+              </svg>
+              <span className="hidden sm:inline">Scan</span>
+            </Button>
+          </div>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => setSelectedCategory(null)}
-              className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+              className={`min-h-10 min-w-[4rem] touch-manipulation rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                 !selectedCategory
                   ? "bg-[var(--primary)] text-white"
                   : "bg-[var(--muted)] text-[var(--foreground)] hover:bg-[var(--border)]"
@@ -722,7 +948,7 @@ export function PosPage() {
                 key={c.id}
                 type="button"
                 onClick={() => setSelectedCategory(c.id)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                className={`min-h-10 touch-manipulation rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                   selectedCategory === c.id
                     ? "bg-[var(--primary)] text-white"
                     : "bg-[var(--muted)] text-[var(--foreground)] hover:bg-[var(--border)]"
@@ -733,13 +959,13 @@ export function PosPage() {
             ))}
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4">
           {loading ? (
             <div className="flex items-center justify-center py-16">
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
             </div>
           ) : filteredProducts.length === 0 ? (
-            <p className="py-8 text-center text-[var(--muted-foreground)]">
+            <p className="py-8 text-center text-sm text-[var(--muted-foreground)]">
               Tidak ada produk. Tambah produk di menu Master → Produk.
             </p>
           ) : (
@@ -758,7 +984,7 @@ export function PosPage() {
                     key={p.id}
                     type="button"
                     onClick={() => addToCart(p)}
-                    className="flex flex-col items-center rounded-lg border border-[var(--border)] p-3 text-left transition-colors hover:bg-[var(--muted)] hover:border-[var(--primary)]"
+                    className="flex min-h-[4.5rem] touch-manipulation flex-col items-center justify-center rounded-lg border border-[var(--border)] p-3 text-left transition-colors active:bg-[var(--muted)] hover:border-[var(--primary)] hover:bg-[var(--muted)]"
                   >
                     <span className="line-clamp-2 w-full font-medium text-[var(--foreground)]">
                       {p.name}
@@ -793,49 +1019,76 @@ export function PosPage() {
         </div>
       </div>
 
-      <div className="flex w-96 min-w-0 flex-shrink-0 flex-col rounded-xl border border-[var(--border)] bg-[var(--background)] overflow-hidden">
-        <div className="shrink-0 border-b border-[var(--border)] px-4 py-3">
-          <h3 className="font-semibold text-[var(--foreground)]">Keranjang</h3>
+      <div className="flex w-full min-w-0 flex-shrink-0 flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--background)] md:max-h-full md:w-96">
+        <div className="shrink-0 border-b border-[var(--border)] px-3 py-2 sm:px-4 sm:py-3">
+          <h3 className="font-semibold text-[var(--foreground)]">Keranjang {cart.length > 0 && `(${cart.length})`}</h3>
+          {cart.length > 0 && (
+            <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">↑↓ pilih · F2 ubah · Del hapus</p>
+          )}
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4 md:max-h-[40vh]">
           {cart.length === 0 ? (
-            <p className="text-center text-sm text-[var(--muted-foreground)] py-8">Keranjang kosong</p>
+            <p className="py-6 text-center text-sm text-[var(--muted-foreground)] sm:py-8">Keranjang kosong</p>
           ) : (
             <div className="space-y-2">
-              {cart.map((item) => (
-                <div
-                  key={`${item.productId}-${item.unitId}`}
-                  className="flex items-center justify-between rounded-lg border border-[var(--border)] p-2"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{item.name}</p>
-                    <p className="text-xs text-[var(--muted-foreground)]">
-                      {formatIdr(item.price)} × {item.qty} {item.unitSymbol}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
+              {cart.map((item, index) => {
+                const isSelected = selectedCartIndex === index;
+                return (
+                  <div
+                    key={`${item.productId}-${item.unitId}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelectedCartIndex(index)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setSelectedCartIndex(index);
+                        if (e.key === "Enter") openEditCartItem(item);
+                      }
+                    }}
+                    className={`flex cursor-pointer items-center justify-between gap-2 rounded-lg border p-2 transition-colors ${
+                      isSelected
+                        ? "border-[var(--primary)] bg-[var(--primary)]/10 ring-2 ring-[var(--primary)]/30"
+                        : "border-[var(--border)] hover:bg-[var(--muted)]/50"
+                    }`}
+                  >
                     <button
                       type="button"
-                      onClick={() => updateQty(item.productId, item.unitId, -1)}
-                      className="flex h-7 w-7 items-center justify-center rounded bg-[var(--muted)] text-sm font-bold hover:bg-[var(--border)]"
+                      onClick={(e) => { e.stopPropagation(); openEditCartItem(item); }}
+                      className="min-w-0 flex-1 text-left"
                     >
-                      −
+                      <p className="truncate text-sm font-medium">{item.name}</p>
+                      <p className="text-xs text-[var(--muted-foreground)]">
+                        {formatIdr(item.price)} × {item.qty} {item.unitSymbol}
+                      </p>
+                      <span className="mt-0.5 block text-xs text-[var(--primary)]">Klik / F2 ubah harga · Del hapus</span>
                     </button>
-                    <span className="w-6 text-center text-sm">{item.qty}</span>
-                    <button
-                      type="button"
-                      onClick={() => updateQty(item.productId, item.unitId, 1)}
-                      className="flex h-7 w-7 items-center justify-center rounded bg-[var(--muted)] text-sm font-bold hover:bg-[var(--border)]"
-                    >
-                      +
-                    </button>
+                    <div className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => updateQty(item.productId, item.unitId, -1)}
+                        className="flex h-9 w-9 touch-manipulation items-center justify-center rounded-lg bg-[var(--muted)] text-sm font-bold hover:bg-[var(--border)] active:opacity-80"
+                        aria-label="Kurangi"
+                      >
+                        −
+                      </button>
+                      <span className="min-w-[1.5rem] text-center text-sm font-medium">{item.qty}</span>
+                      <button
+                        type="button"
+                        onClick={() => updateQty(item.productId, item.unitId, 1)}
+                        className="flex h-9 w-9 touch-manipulation items-center justify-center rounded-lg bg-[var(--muted)] text-sm font-bold hover:bg-[var(--border)] active:opacity-80"
+                        aria-label="Tambah"
+                      >
+                        +
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
-        <div className="shrink-0 border-t border-[var(--border)] p-4 space-y-3">
+        <div className="shrink-0 space-y-3 border-t border-[var(--border)] p-3 sm:p-4">
           <div className="space-y-1 text-sm">
             <div className="flex justify-between">
               <span className="text-[var(--muted-foreground)]">Subtotal</span>
@@ -849,21 +1102,96 @@ export function PosPage() {
           {successMsg && (
             <p className="text-center text-sm font-medium text-emerald-600">{successMsg}</p>
           )}
+          {lastReceipt && (
+            <div className="space-y-2">
+              <p className="text-center text-xs text-[var(--muted-foreground)]">Cetak struk</p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 min-w-0"
+                  onClick={() => {
+                    printReceiptInWindow(lastReceipt);
+                  }}
+                >
+                  Print (USB/Bluetooth)
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 min-w-0"
+                  disabled={bluetoothPrinting || !navigator.bluetooth}
+                  onClick={async () => {
+                    if (!lastReceipt) return;
+                    setBluetoothPrintError(null);
+                    setBluetoothPrinting(true);
+                    try {
+                      await printReceiptBluetooth(lastReceipt);
+                    } catch (err) {
+                      setBluetoothPrintError(err instanceof Error ? err.message : "Gagal cetak Bluetooth");
+                    } finally {
+                      setBluetoothPrinting(false);
+                    }
+                  }}
+                >
+                  {bluetoothPrinting ? "Mencetak..." : "Thermal BLE"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 min-w-0"
+                  onClick={async () => {
+                    if (!lastReceipt) return;
+                    try {
+                      await printReceiptLocal(lastReceipt, getReceiptLocalUrl());
+                    } catch (err) {
+                      console.error("Cetak app lokal gagal:", err);
+                      alert(err instanceof Error ? err.message : "Gagal cetak. Pastikan Print Agent berjalan.");
+                    }
+                  }}
+                >
+                  App lokal
+                </Button>
+              </div>
+              {bluetoothPrintError && (
+                <p className="text-center text-xs text-red-600">{bluetoothPrintError}</p>
+              )}
+            </div>
+          )}
           <Button
-            className="w-full"
+            className="h-12 w-full touch-manipulation text-base sm:h-10 sm:text-sm"
             onClick={openCheckoutModal}
             disabled={cart.length === 0}
+            title="Enter buka bayar · Di modal: Enter = bayar+cetak, Shift+Enter = bayar saja"
           >
             Bayar
           </Button>
+          <p className="text-center text-xs text-[var(--muted-foreground)]">Enter = Bayar</p>
         </div>
       </div>
       </div>
 
       <Modal
+        open={scanModalOpen}
+        onClose={() => { setScanModalOpen(false); setScanError(null); }}
+        title="Scan Barcode / QR"
+        size="lg"
+      >
+        <BarcodeScanner
+          open={scanModalOpen}
+          onScan={handleBarcodeScan}
+          onClose={() => { setScanModalOpen(false); setScanError(null); }}
+          lastError={scanError}
+        />
+      </Modal>
+
+      <Modal
         open={!!addModal}
         onClose={() => setAddModal(null)}
-        title={addModal ? addModal.product.name : ""}
+        title={addModal ? (addModal.editCartKey ? "Ubah harga/satuan" : addModal.product.name) : ""}
         size="sm"
       >
         {addModal && (
@@ -947,7 +1275,7 @@ export function PosPage() {
             </div>
             <div className="flex gap-2">
               <Button className="flex-1" onClick={confirmAddToCart}>
-                Tambah ke Keranjang
+                {addModal.editCartKey ? "Simpan" : "Tambah ke Keranjang"}
               </Button>
               <Button variant="outline" onClick={() => setAddModal(null)}>
                 Batal
@@ -1140,6 +1468,9 @@ export function PosPage() {
               Batal
             </Button>
           </div>
+          <p className="text-center text-xs text-[var(--muted-foreground)]">
+            Enter = bayar + cetak struk · Shift+Enter = bayar saja
+          </p>
         </div>
       </Modal>
 

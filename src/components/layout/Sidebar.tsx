@@ -33,6 +33,7 @@ const allNavGroups: NavGroup[] = [
     items: [
       { href: "pos", label: "POS", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" },
       { href: "stok-toko", label: "Stok Toko", icon: "M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" },
+      { href: "opname", label: "Stock Opname", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" },
     ],
     outletTypes: ["mart", "fnb", "barbershop"],
   },
@@ -50,6 +51,7 @@ const allNavGroups: NavGroup[] = [
     items: [
       { href: "pembelian", label: "Pembelian", icon: "M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" },
       { href: "stok", label: "Stok", icon: "M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" },
+      { href: "opname", label: "Stock Opname", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" },
       { href: "gudang", label: "Pergudangan", icon: "M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" },
     ],
     outletTypes: ["gudang"],
@@ -85,9 +87,13 @@ function NavIcon({ d }: { d: string }) {
 export function Sidebar({
   basePath,
   outletType = "mart",
+  mobileOpen = false,
+  onMobileClose,
 }: {
   basePath: string;
   outletType?: OutletType;
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }) {
   const location = useLocation();
   const pathname = location.pathname;
@@ -99,38 +105,63 @@ export function Sidebar({
     if (stored !== null) setExpanded(stored === "1");
   }, []);
 
+  useEffect(() => {
+    if (mobileOpen) document.body.style.overflow = "hidden";
+    else document.body.style.overflow = "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [mobileOpen]);
+
   function toggleSidebar() {
     const next = !expanded;
     setExpanded(next);
     localStorage.setItem(SIDEBAR_EXPANDED_KEY, next ? "1" : "0");
   }
 
-  return (
-    <aside
-      className={`flex shrink-0 flex-col bg-[var(--sidebar)] text-[var(--sidebar-foreground)] transition-[width] duration-200 ${expanded ? "w-56" : "w-16"}`}
-    >
+  function handleNavClick() {
+    onMobileClose?.();
+  }
+
+  const asideContent = (
+    <>
       <div className="flex h-16 items-center justify-between border-b border-[var(--border)] px-3">
-        <Link to="/" className="flex items-center gap-2 overflow-hidden">
+        <Link to="/" className="flex items-center gap-2 overflow-hidden" onClick={handleNavClick}>
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--primary)] text-white">
             <span className="text-lg font-bold">H</span>
           </div>
-          {expanded && <span className="truncate text-sm font-semibold">Hisabia</span>}
+          {(expanded || mobileOpen) && <span className="truncate text-sm font-semibold">Hisabia</span>}
         </Link>
-        <button
-          type="button"
-          onClick={toggleSidebar}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg hover:bg-white/10"
-          title={expanded ? "Persempit sidebar" : "Perlebar sidebar"}
-        >
-          <svg className={`h-5 w-5 transition-transform ${expanded ? "" : "rotate-180"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-          </svg>
-        </button>
+        <div className="flex items-center gap-1">
+          {onMobileClose ? (
+            <button
+              type="button"
+              onClick={onMobileClose}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg hover:bg-white/10 md:hidden"
+              title="Tutup menu"
+              aria-label="Tutup menu"
+            >
+              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg hover:bg-white/10 md:flex"
+            title={expanded ? "Persempit sidebar" : "Perlebar sidebar"}
+          >
+            <svg className={`h-5 w-5 transition-transform ${expanded ? "" : "rotate-180"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+            </svg>
+          </button>
+        </div>
       </div>
       <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-2">
         {navGroups.map((group) => (
           <div key={group.label}>
-            {expanded && (
+            {(expanded || mobileOpen) && (
               <p className="mb-1 px-3 py-1 text-xs font-medium uppercase tracking-wider text-[var(--sidebar-foreground)]/70">
                 {group.label}
               </p>
@@ -142,11 +173,12 @@ export function Sidebar({
                 <Link
                   key={item.href}
                   to={fullHref}
-                  className={`flex items-center gap-3 rounded-lg p-3 transition-colors ${expanded ? "px-3" : "justify-center"} ${isActive ? "bg-[var(--primary)] text-white" : "hover:bg-white/10"}`}
+                  onClick={handleNavClick}
+                  className={`flex items-center gap-3 rounded-lg p-3 transition-colors ${expanded || mobileOpen ? "px-3" : "justify-center"} ${isActive ? "bg-[var(--primary)] text-white" : "hover:bg-white/10"}`}
                   title={item.label}
                 >
                   <NavIcon d={item.icon} />
-                  {expanded && <span className="truncate text-sm">{item.label}</span>}
+                  {(expanded || mobileOpen) && <span className="truncate text-sm">{item.label}</span>}
                 </Link>
               );
             })}
@@ -154,13 +186,42 @@ export function Sidebar({
         ))}
       </nav>
       <div className="border-t border-[var(--border)] p-2">
-        <Link to="/logout" className={`flex items-center rounded-lg p-3 hover:bg-white/10 ${expanded ? "gap-3 px-3" : "justify-center"}`} title="Keluar">
+        <Link to="/logout" onClick={handleNavClick} className={`flex items-center rounded-lg p-3 hover:bg-white/10 ${expanded || mobileOpen ? "gap-3 px-3" : "justify-center"}`} title="Keluar">
           <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
           </svg>
-          {expanded && <span className="text-sm">Keluar</span>}
+          {(expanded || mobileOpen) && <span className="text-sm">Keluar</span>}
         </Link>
       </div>
+    </>
+  );
+
+  if (onMobileClose) {
+    return (
+      <>
+        {mobileOpen && (
+          <div
+            className="fixed inset-0 z-40 bg-black/50 md:hidden"
+            onClick={onMobileClose}
+            aria-hidden="true"
+          />
+        )}
+        <aside
+          className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-[var(--sidebar)] text-[var(--sidebar-foreground)] shadow-xl transition-[width,transform] duration-200 ease-out md:static md:z-auto md:shrink-0 md:translate-x-0 md:shadow-none ${
+            mobileOpen ? "translate-x-0" : "-translate-x-full"
+          } ${expanded ? "md:w-56" : "md:w-16"}`}
+        >
+          {asideContent}
+        </aside>
+      </>
+    );
+  }
+
+  return (
+    <aside
+      className={`flex shrink-0 flex-col bg-[var(--sidebar)] text-[var(--sidebar-foreground)] transition-[width] duration-200 ${expanded ? "w-56" : "w-16"}`}
+    >
+      {asideContent}
     </aside>
   );
 }

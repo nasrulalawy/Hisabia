@@ -3,6 +3,13 @@ import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import {
+  getReceiptPrinterType,
+  setReceiptPrinterType,
+  getReceiptLocalUrl,
+  setReceiptLocalUrl,
+  type ReceiptPrinterType,
+} from "@/lib/receipt";
 
 export function TokoPage() {
   const { orgId } = useOrg();
@@ -12,6 +19,19 @@ export function TokoPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [receiptPrinter, setReceiptPrinter] = useState<ReceiptPrinterType>("dialog");
+
+  const [localPrintUrl, setLocalPrintUrl] = useState("http://localhost:3999");
+
+  useEffect(() => {
+    setReceiptPrinter(getReceiptPrinterType());
+    setLocalPrintUrl(getReceiptLocalUrl());
+  }, []);
+
+  function handleReceiptPrinterChange(value: ReceiptPrinterType) {
+    setReceiptPrinter(value);
+    setReceiptPrinterType(value);
+  }
 
   useEffect(() => {
     if (!orgId) return;
@@ -125,6 +145,49 @@ export function TokoPage() {
           {saving ? "Menyimpan..." : "Simpan"}
         </Button>
       </form>
+
+      <div className="max-w-md space-y-4 border-t border-[var(--border)] pt-6">
+        <h3 className="text-lg font-medium text-[var(--foreground)]">Cetak Struk</h3>
+        <p className="text-sm text-[var(--muted-foreground)]">
+          Jenis printer untuk cetak struk otomatis saat bayar dengan Enter di POS.
+        </p>
+        <div>
+          <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
+            Jenis printer struk
+          </label>
+          <select
+            value={receiptPrinter}
+            onChange={(e) => handleReceiptPrinterChange(e.target.value as ReceiptPrinterType)}
+            className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+          >
+            <option value="dialog">Dialog print (USB / Bluetooth sistem)</option>
+            <option value="bluetooth">Thermal Bluetooth (BLE)</option>
+            <option value="local">App lokal (direct, tanpa dialog)</option>
+          </select>
+          <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+            Dialog: jendela print browser. BLE: langsung ke printer thermal Bluetooth. App lokal: install Hisabia Print Agent di PC, cetak direct ke printer USB/Bluetooth.
+          </p>
+        </div>
+        {receiptPrinter === "local" && (
+          <div>
+            <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
+              URL App Print Agent
+            </label>
+            <Input
+              value={localPrintUrl}
+              onChange={(e) => {
+                const v = e.target.value;
+                setLocalPrintUrl(v);
+                setReceiptLocalUrl(v);
+              }}
+              placeholder="http://localhost:3999"
+            />
+            <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+              Jalankan Hisabia Print Agent di PC ini, lalu isi URL yang sama (default: http://localhost:3999).
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

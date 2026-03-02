@@ -36,8 +36,8 @@ export function DataTable<T extends { id: string }>({
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--background)] overflow-hidden">
       {onAdd && (
-        <div className="flex justify-end border-b border-[var(--border)] p-4">
-          <Button onClick={onAdd} disabled={addDisabled}>{addLabel}</Button>
+        <div className="flex justify-end border-b border-[var(--border)] p-3 sm:p-4">
+          <Button onClick={onAdd} disabled={addDisabled} className="min-h-10 touch-manipulation">{addLabel}</Button>
         </div>
       )}
       <div className="overflow-x-auto">
@@ -54,13 +54,13 @@ export function DataTable<T extends { id: string }>({
                 {columns.map((col) => (
                   <th
                     key={col.key}
-                    className={`px-4 py-3 font-medium text-[var(--foreground)] ${col.className ?? ""}`}
+                    className={`whitespace-nowrap px-3 py-2 font-medium text-[var(--foreground)] sm:px-4 sm:py-3 ${col.className ?? ""}`}
                   >
                     {col.header}
                   </th>
                 ))}
                 {(onEdit || onDelete) && (
-                  <th className="w-24 px-4 py-3 font-medium text-[var(--foreground)]">Aksi</th>
+                  <th className="w-20 whitespace-nowrap px-2 py-2 font-medium text-[var(--foreground)] sm:w-24 sm:px-4 sm:py-3">Aksi</th>
                 )}
               </tr>
             </thead>
@@ -71,7 +71,7 @@ export function DataTable<T extends { id: string }>({
                   className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--muted)]/30"
                 >
                   {columns.map((col) => (
-                    <td key={col.key} className={`px-4 py-3 ${col.className ?? ""}`}>
+                    <td key={col.key} className={`px-3 py-2 sm:px-4 sm:py-3 ${col.className ?? ""}`}>
                       {col.render
                         ? col.render(row)
                         : String((row as Record<string, unknown>)[col.key] ?? "-")}
