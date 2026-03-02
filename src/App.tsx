@@ -40,6 +40,7 @@ import { ShopPage } from "@/pages/shop/ShopPage";
 import { CatalogPage } from "@/pages/shop/CatalogPage";
 import { OrderDetailPage } from "@/pages/order/OrderDetailPage";
 import { TokoPage } from "@/pages/settings/TokoPage";
+import { IntegrasiPage } from "@/pages/settings/IntegrasiPage";
 import { DaftarPelanggan } from "@/pages/DaftarPelanggan";
 import { AdminDashboard } from "@/pages/admin/AdminDashboard";
 import { InstallPWA } from "@/components/InstallPWA";
@@ -178,6 +179,7 @@ export default function App() {
           <Route path="subscription" element={<SubscriptionPage />} />
           <Route path="subscription/success" element={<PaymentSuccessPage />} />
           <Route path="toko" element={<TokoPage />} />
+          <Route path="integrasi" element={<IntegrasiPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

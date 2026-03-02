@@ -3,6 +3,7 @@ import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
 import { formatIdr, getStockStatus, getStockStatusLabel } from "@/lib/utils";
 import { postJournalEntry } from "@/lib/accounting";
+import { notifyN8n } from "@/lib/apiServer";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
@@ -800,6 +801,15 @@ export function PosPage() {
       notes: notes.trim() || undefined,
     };
     setLastReceipt(receiptData);
+
+    notifyN8n(orgId, "order.created", {
+      order_id: order.id,
+      total: finalTotal,
+      subtotal,
+      discount: discountAmount,
+      payment_method: orderPaymentMethod,
+      items: cart.map((c) => ({ product_id: c.productId, name: c.name, quantity: c.qty, price: c.price })),
+    }).catch(() => {});
 
     setCart([]);
     setNotes("");

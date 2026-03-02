@@ -776,6 +776,208 @@ app.post("/api/shop/:token/order", async (req, res) => {
   });
 });
 
+// ========== Integrasi n8n ==========
+// Middleware: validasi API key untuk route /api/n8n/*
+async function n8nApiKeyAuth(req, res, next) {
+  const apiKey = req.headers["x-api-key"] || (req.headers.authorization && req.headers.authorization.startsWith("Bearer ") ? req.headers.authorization.slice(7) : null);
+  if (!apiKey || !admin) {
+    return res.status(401).json({ error: "X-API-Key atau Authorization: Bearer <api_key> diperlukan" });
+  }
+  const { data: row, error } = await admin
+    .from("organization_integrations")
+    .select("organization_id")
+    .eq("api_key", apiKey.trim())
+    .maybeSingle();
+  if (error || !row) return res.status(401).json({ error: "API key tidak valid" });
+  req.orgIdForN8n = row.organization_id;
+  next();
+}
+
+// GET /api/n8n/orders - daftar order (query: since, until, limit)
+app.get("/api/n8n/orders", n8nApiKeyAuth, async (req, res) => {
+  try {
+    const orgId = req.orgIdForN8n;
+    const since = req.query.since || null;
+    const until = req.query.until || null;
+    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+    let q = admin.from("orders").select("id, status, subtotal, discount, total, payment_method, notes, created_at, customer_id, outlet_id").eq("organization_id", orgId).order("created_at", { ascending: false }).limit(limit);
+    if (since) q = q.gte("created_at", since);
+    if (until) q = q.lte("created_at", until);
+    const { data: orders, error } = await q;
+    if (error) return res.status(500).json({ error: error.message });
+    const ids = (orders || []).map((o) => o.id);
+    if (ids.length === 0) return res.json({ orders: [] });
+    const { data: items } = await admin.from("order_items").select("order_id, product_id, name, price, quantity").in("order_id", ids);
+    const byOrder = {};
+    (items || []).forEach((i) => {
+      if (!byOrder[i.order_id]) byOrder[i.order_id] = [];
+      byOrder[i.order_id].push(i);
+    });
+    const result = (orders || []).map((o) => ({ ...o, items: byOrder[o.id] || [] }));
+    return res.json({ orders: result });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: err.message || "Server error" });
+  }
+});
+
+// GET /api/n8n/products
+app.get("/api/n8n/products", n8nApiKeyAuth, async (req, res) => {
+  try {
+    const orgId = req.orgIdForN8n;
+    const { data, error } = await admin.from("products").select("id, name, code, barcode, stock, cost_price, selling_price, is_available, created_at").eq("organization_id", orgId).order("name");
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ products: data || [] });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: err.message || "Server error" });
+  }
+});
+
+// GET /api/n8n/customers
+app.get("/api/n8n/customers", n8nApiKeyAuth, async (req, res) => {
+  try {
+    const orgId = req.orgIdForN8n;
+    const { data, error } = await admin.from("customers").select("id, name, email, phone, created_at").eq("organization_id", orgId).order("name");
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ customers: data || [] });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: err.message || "Server error" });
+  }
+});
+
+// GET /api/n8n/cash-flows (arus kas)
+app.get("/api/n8n/cash-flows", n8nApiKeyAuth, async (req, res) => {
+  try {
+    const orgId = req.orgIdForN8n;
+    const since = req.query.since || null;
+    const until = req.query.until || null;
+    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+    let q = admin.from("cash_flows").select("id, type, amount, description, reference_type, reference_id, created_at").eq("organization_id", orgId).order("created_at", { ascending: false }).limit(limit);
+    if (since) q = q.gte("created_at", since);
+    if (until) q = q.lte("created_at", until);
+    const { data, error } = await q;
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ cash_flows: data || [] });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: err.message || "Server error" });
+  }
+});
+
+// --- App (auth): dapatkan/simpan pengaturan n8n ---
+app.get("/api/integrations/n8n", async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    if (!token) return res.status(401).json({ error: "Unauthorized" });
+    const supabaseAuth = createClient(supabaseUrl, supabaseAnon).auth;
+    const { data: { user }, error: userError } = await supabaseAuth.getUser(token);
+    if (userError || !user) return res.status(401).json({ error: "Invalid token" });
+    const orgId = req.query.organization_id;
+    if (!orgId) return res.status(400).json({ error: "organization_id diperlukan" });
+    if (!admin) return res.status(503).json({ error: "Server not configured" });
+    const { data: membership } = await admin.from("organization_members").select("organization_id").eq("user_id", user.id).eq("organization_id", orgId).maybeSingle();
+    if (!membership) return res.status(403).json({ error: "Akses ditolak" });
+    const { data: row } = await admin.from("organization_integrations").select("n8n_webhook_url, api_key").eq("organization_id", orgId).maybeSingle();
+    return res.json({
+      n8n_webhook_url: row?.n8n_webhook_url || "",
+      has_api_key: !!(row?.api_key),
+      api_key_prefix: row?.api_key ? row.api_key.slice(-4) : null,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: err.message || "Server error" });
+  }
+});
+
+app.post("/api/integrations/n8n", async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    if (!token) return res.status(401).json({ error: "Unauthorized" });
+    const supabaseAuth = createClient(supabaseUrl, supabaseAnon).auth;
+    const { data: { user }, error: userError } = await supabaseAuth.getUser(token);
+    if (userError || !user) return res.status(401).json({ error: "Invalid token" });
+    const { organization_id: orgId, n8n_webhook_url: url } = req.body || {};
+    if (!orgId) return res.status(400).json({ error: "organization_id diperlukan" });
+    if (!admin) return res.status(503).json({ error: "Server not configured" });
+    const { data: membership } = await admin.from("organization_members").select("organization_id").eq("user_id", user.id).eq("organization_id", orgId).maybeSingle();
+    if (!membership) return res.status(403).json({ error: "Akses ditolak" });
+    const webhookUrl = typeof url === "string" ? url.trim() || null : null;
+    const { data: existing } = await admin.from("organization_integrations").select("organization_id").eq("organization_id", orgId).maybeSingle();
+    const now = new Date().toISOString();
+    if (existing) {
+      const { error: updErr } = await admin.from("organization_integrations").update({ n8n_webhook_url: webhookUrl, updated_at: now }).eq("organization_id", orgId);
+      if (updErr) return res.status(500).json({ error: updErr.message });
+    } else {
+      const { error: insErr } = await admin.from("organization_integrations").insert({ organization_id: orgId, n8n_webhook_url: webhookUrl, updated_at: now });
+      if (insErr) return res.status(500).json({ error: insErr.message });
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: err.message || "Server error" });
+  }
+});
+
+app.post("/api/integrations/n8n/api-key", async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    if (!token) return res.status(401).json({ error: "Unauthorized" });
+    const supabaseAuth = createClient(supabaseUrl, supabaseAnon).auth;
+    const { data: { user }, error: userError } = await supabaseAuth.getUser(token);
+    if (userError || !user) return res.status(401).json({ error: "Invalid token" });
+    const { organization_id: orgId } = req.body || {};
+    if (!orgId) return res.status(400).json({ error: "organization_id diperlukan" });
+    if (!admin) return res.status(503).json({ error: "Server not configured" });
+    const { data: membership } = await admin.from("organization_members").select("organization_id").eq("user_id", user.id).eq("organization_id", orgId).maybeSingle();
+    if (!membership) return res.status(403).json({ error: "Akses ditolak" });
+    const apiKey = "hisabia_" + crypto.randomBytes(24).toString("base64url");
+    const now = new Date().toISOString();
+    const { data: existing } = await admin.from("organization_integrations").select("organization_id").eq("organization_id", orgId).maybeSingle();
+    if (existing) {
+      const { error: updErr } = await admin.from("organization_integrations").update({ api_key: apiKey, updated_at: now }).eq("organization_id", orgId);
+      if (updErr) return res.status(500).json({ error: updErr.message });
+    } else {
+      const { error: insErr } = await admin.from("organization_integrations").insert({ organization_id: orgId, api_key: apiKey, updated_at: now });
+      if (insErr) return res.status(500).json({ error: insErr.message });
+    }
+    return res.json({ api_key: apiKey });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: err.message || "Server error" });
+  }
+});
+
+// Notify n8n webhook (dipanggil dari app setelah event, mis. order created)
+app.post("/api/integrations/n8n/notify", async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    if (!token) return res.status(401).json({ error: "Unauthorized" });
+    const supabaseAuth = createClient(supabaseUrl, supabaseAnon).auth;
+    const { data: { user }, error: userError } = await supabaseAuth.getUser(token);
+    if (userError || !user) return res.status(401).json({ error: "Invalid token" });
+    const { organization_id: orgId, event, payload } = req.body || {};
+    if (!orgId || !event) return res.status(400).json({ error: "organization_id dan event diperlukan" });
+    if (!admin) return res.status(503).json({ error: "Server not configured" });
+    const { data: membership } = await admin.from("organization_members").select("organization_id").eq("user_id", user.id).eq("organization_id", orgId).maybeSingle();
+    if (!membership) return res.status(403).json({ error: "Akses ditolak" });
+    const { data: row } = await admin.from("organization_integrations").select("n8n_webhook_url").eq("organization_id", orgId).maybeSingle();
+    const webhookUrl = row?.n8n_webhook_url?.trim();
+    if (!webhookUrl) return res.json({ ok: true, sent: false });
+    const body = JSON.stringify({ event, payload: payload || {}, timestamp: new Date().toISOString() });
+    const fetchRes = await fetch(webhookUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body }).catch(() => null);
+    return res.json({ ok: true, sent: true, status: fetchRes?.status });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: err.message || "Server error" });
+  }
+});
+
 // --- Public: order detail by token ---
 app.get("/api/order/:token", async (req, res) => {
   if (!admin) return res.status(503).json({ error: "Server not configured" });
