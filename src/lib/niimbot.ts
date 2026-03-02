@@ -90,10 +90,12 @@ export async function connectNiimbot(): Promise<NiimbotConnection> {
   if (!navigator.bluetooth) {
     throw new Error("Browser tidak mendukung Bluetooth. Gunakan Chrome/Edge dan pastikan HTTPS.");
   }
+  // acceptAllDevices: true agar semua perangkat BLE tampil di scan (nama NiiMBot bisa beda: B21, D11, atau tidak diiklankan)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const device = await navigator.bluetooth.requestDevice({
-    filters: [{ namePrefix: "NiiMBot" }, { namePrefix: "NiiM" }],
+    acceptAllDevices: true,
     optionalServices: [NIIMBOT_SERVICE_UUID],
-  });
+  } as any);
   const server = await device.gatt!.connect();
   const service = await server.getPrimaryService(NIIMBOT_SERVICE_UUID);
   const chars = await service.getCharacteristics();
