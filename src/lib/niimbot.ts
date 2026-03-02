@@ -11,6 +11,10 @@ export const NIIMBOT_CHAR_UUID = "bef8d6c9-9c21-4c9e-b632-bd58c1009f9f";
 const HEAD = [0x55, 0x55];
 const TAIL = [0xaa, 0xaa];
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function buildPacket(cmd: number, data: number[]): Uint8Array {
   const dataLen = data.length;
   const arr = [...HEAD, cmd, dataLen & 0xff, ...data];
@@ -110,15 +114,22 @@ export async function connectNiimbot(): Promise<NiimbotConnection> {
 
   return {
     async write(data: Uint8Array) {
-      const CHUNK = 100;
+      const CHUNK = 80;
+      const DELAY_MS = 18;
       for (let i = 0; i < data.length; i += CHUNK) {
         await write(data.slice(i, i + CHUNK));
+        if (DELAY_MS > 0) await delay(DELAY_MS);
       }
     },
     disconnect() {
       server.disconnect();
     },
   };
+}
+
+/** Heartbeat agar printer tidak disconnect (protocol Advanced 1). */
+function buildHeartbeat(): Uint8Array {
+  return buildPacket(0xdc, [0x01]);
 }
 
 /**
@@ -133,9 +144,15 @@ export async function printLabelNiimbot(lines: string[]): Promise<void> {
 
   const conn = await connectNiimbot();
   try {
+    await delay(100);
+    await conn.write(buildHeartbeat());
+
     await conn.write(buildPacket(0x21, [0x01]));
     await conn.write(buildPacket(0x23, [0x00]));
     await conn.write(buildPacket(0x01, [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]));
+    await delay(50);
+    await conn.write(buildPacket(0xa3, [0x01]));
+    await delay(30);
     await conn.write(buildPacket(0x03, [0x01]));
     const rowsLo = heightPx & 0xff;
     const rowsHi = (heightPx >> 8) & 0xff;
@@ -144,6 +161,10 @@ export async function printLabelNiimbot(lines: string[]): Promise<void> {
     await conn.write(buildPacket(0x13, [rowsLo, rowsHi, colsLo, colsHi, 0x01, 0x00]));
 
     for (let row = 0; row < bitmapRows.length; row++) {
+      if (row > 0 && row % 40 === 0) {
+        await conn.write(buildHeartbeat());
+        await delay(40);
+      }
       const rowData = bitmapRows[row];
       const blackCount = countBits(rowData);
       const isEmpty = blackCount === 0;
@@ -166,7 +187,9 @@ export async function printLabelNiimbot(lines: string[]): Promise<void> {
     }
 
     await conn.write(buildPacket(0xe3, [0x01]));
+    await delay(50);
     await conn.write(buildPacket(0xf3, [0x01]));
+    await delay(100);
   } finally {
     conn.disconnect();
   }
