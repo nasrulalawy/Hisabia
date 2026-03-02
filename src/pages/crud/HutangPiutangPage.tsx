@@ -7,6 +7,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { postJournalEntry } from "@/lib/accounting";
 import type { Receivable } from "@/lib/database.types";
 import type { Payable } from "@/lib/database.types";
 
@@ -105,15 +106,33 @@ function PiutangSection() {
         const prevPaid = Number(editing.paid ?? 0);
         const paidDiff = paidAmount - prevPaid;
         if (paidDiff > 0) {
-          await supabase.from("cash_flows").insert({
-            organization_id: orgId,
-            outlet_id: currentOutletId,
-            type: "in",
-            amount: paidDiff,
-            description: `Pembayaran piutang ${editing.customers?.name ?? ""}`.trim(),
-            reference_type: "receivable",
-            reference_id: editing.id,
-          });
+          const { data: cf } = await supabase
+            .from("cash_flows")
+            .insert({
+              organization_id: orgId,
+              outlet_id: currentOutletId,
+              type: "in",
+              amount: paidDiff,
+              description: `Pembayaran piutang ${editing.customers?.name ?? ""}`.trim(),
+              reference_type: "receivable",
+              reference_id: editing.id,
+            })
+            .select("id")
+            .single();
+          if (cf) {
+            const d = new Date().toISOString().slice(0, 10);
+            await postJournalEntry({
+              organization_id: orgId,
+              entry_date: d,
+              description: `Pembayaran piutang ${editing.customers?.name ?? ""}`.trim(),
+              reference_type: "cash_flow",
+              reference_id: cf.id,
+              lines: [
+                { code: "1-1", debit: paidDiff, credit: 0 },
+                { code: "1-2", debit: 0, credit: paidDiff },
+              ],
+            });
+          }
         }
         setModalOpen(false);
         fetchData();
@@ -121,17 +140,46 @@ function PiutangSection() {
     } else {
       const { data: inserted, error: err } = await supabase.from("receivables").insert(payload).select("id").single();
       if (err) setError(err.message);
-      else {
-        if (paidAmount > 0 && inserted) {
-          await supabase.from("cash_flows").insert({
-            organization_id: orgId,
-            outlet_id: currentOutletId,
-            type: "in",
-            amount: paidAmount,
-            description: `Pembayaran piutang`,
-            reference_type: "receivable",
-            reference_id: inserted.id,
-          });
+      else if (inserted) {
+        const d = new Date().toISOString().slice(0, 10);
+        await postJournalEntry({
+          organization_id: orgId,
+          entry_date: d,
+          description: form.notes.trim() || "Piutang usaha",
+          reference_type: "receivable",
+          reference_id: inserted.id,
+          lines: [
+            { code: "1-2", debit: parseFloat(form.amount), credit: 0 },
+            { code: "4-1", debit: 0, credit: parseFloat(form.amount) },
+          ],
+        });
+        if (paidAmount > 0) {
+          const { data: cf } = await supabase
+            .from("cash_flows")
+            .insert({
+              organization_id: orgId,
+              outlet_id: currentOutletId,
+              type: "in",
+              amount: paidAmount,
+              description: `Pembayaran piutang`,
+              reference_type: "receivable",
+              reference_id: inserted.id,
+            })
+            .select("id")
+            .single();
+          if (cf) {
+            await postJournalEntry({
+              organization_id: orgId,
+              entry_date: d,
+              description: "Pembayaran piutang",
+              reference_type: "cash_flow",
+              reference_id: cf.id,
+              lines: [
+                { code: "1-1", debit: paidAmount, credit: 0 },
+                { code: "1-2", debit: 0, credit: paidAmount },
+              ],
+            });
+          }
         }
         setModalOpen(false);
         fetchData();
@@ -344,15 +392,33 @@ function HutangSection() {
         const prevPaid = Number(editing.paid ?? 0);
         const paidDiff = paidAmount - prevPaid;
         if (paidDiff > 0) {
-          await supabase.from("cash_flows").insert({
-            organization_id: orgId,
-            outlet_id: currentOutletId,
-            type: "out",
-            amount: paidDiff,
-            description: `Pembayaran hutang ${editing.suppliers?.name ?? ""}`.trim(),
-            reference_type: "payable",
-            reference_id: editing.id,
-          });
+          const { data: cf } = await supabase
+            .from("cash_flows")
+            .insert({
+              organization_id: orgId,
+              outlet_id: currentOutletId,
+              type: "out",
+              amount: paidDiff,
+              description: `Pembayaran hutang ${editing.suppliers?.name ?? ""}`.trim(),
+              reference_type: "payable",
+              reference_id: editing.id,
+            })
+            .select("id")
+            .single();
+          if (cf) {
+            const d = new Date().toISOString().slice(0, 10);
+            await postJournalEntry({
+              organization_id: orgId,
+              entry_date: d,
+              description: `Pembayaran hutang ${editing.suppliers?.name ?? ""}`.trim(),
+              reference_type: "cash_flow",
+              reference_id: cf.id,
+              lines: [
+                { code: "2-1", debit: paidDiff, credit: 0 },
+                { code: "1-1", debit: 0, credit: paidDiff },
+              ],
+            });
+          }
         }
         setModalOpen(false);
         fetchData();
@@ -360,17 +426,46 @@ function HutangSection() {
     } else {
       const { data: inserted, error: err } = await supabase.from("payables").insert(payload).select("id").single();
       if (err) setError(err.message);
-      else {
-        if (paidAmount > 0 && inserted) {
-          await supabase.from("cash_flows").insert({
-            organization_id: orgId,
-            outlet_id: currentOutletId,
-            type: "out",
-            amount: paidAmount,
-            description: `Pembayaran hutang`,
-            reference_type: "payable",
-            reference_id: inserted.id,
-          });
+      else if (inserted) {
+        const d = new Date().toISOString().slice(0, 10);
+        await postJournalEntry({
+          organization_id: orgId,
+          entry_date: d,
+          description: form.notes.trim() || "Hutang usaha",
+          reference_type: "payable",
+          reference_id: inserted.id,
+          lines: [
+            { code: "5-2", debit: parseFloat(form.amount), credit: 0 },
+            { code: "2-1", debit: 0, credit: parseFloat(form.amount) },
+          ],
+        });
+        if (paidAmount > 0) {
+          const { data: cf } = await supabase
+            .from("cash_flows")
+            .insert({
+              organization_id: orgId,
+              outlet_id: currentOutletId,
+              type: "out",
+              amount: paidAmount,
+              description: `Pembayaran hutang`,
+              reference_type: "payable",
+              reference_id: inserted.id,
+            })
+            .select("id")
+            .single();
+          if (cf) {
+            await postJournalEntry({
+              organization_id: orgId,
+              entry_date: d,
+              description: "Pembayaran hutang",
+              reference_type: "cash_flow",
+              reference_id: cf.id,
+              lines: [
+                { code: "2-1", debit: paidAmount, credit: 0 },
+                { code: "1-1", debit: 0, credit: paidAmount },
+              ],
+            });
+          }
         }
         setModalOpen(false);
         fetchData();

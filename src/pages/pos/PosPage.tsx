@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
 import { formatIdr, getStockStatus, getStockStatusLabel } from "@/lib/utils";
+import { postJournalEntry } from "@/lib/accounting";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
@@ -752,6 +753,32 @@ export function PosPage() {
         amount: finalTotal,
         paid: amountPaidNow,
         notes: notes.trim() || `Order #${order.id.slice(0, 8)}`,
+      });
+    }
+
+    const cogsTotal = cart.reduce((sum, c) => {
+      const product = products.find((p) => p.id === c.productId);
+      const cost = Number(product?.cost_price ?? 0) * c.qty * c.conversionToBase;
+      return sum + cost;
+    }, 0);
+    const entryDate = new Date().toISOString().slice(0, 10);
+    const lines: { code: string; debit: number; credit: number }[] = [];
+    if (amountPaidNow > 0) lines.push({ code: "1-1", debit: amountPaidNow, credit: 0 });
+    if (finalTotal - amountPaidNow > 0) lines.push({ code: "1-2", debit: finalTotal - amountPaidNow, credit: 0 });
+    lines.push({ code: "4-1", debit: 0, credit: finalTotal });
+    if (cogsTotal > 0) {
+      lines.push({ code: "5-1", debit: cogsTotal, credit: 0 });
+      lines.push({ code: "1-3", debit: 0, credit: cogsTotal });
+    }
+    if (lines.length > 0) {
+      await postJournalEntry({
+        organization_id: orgId,
+        entry_date: entryDate,
+        description: `Penjualan POS #${order.id.slice(0, 8)}`,
+        reference_type: "order",
+        reference_id: order.id,
+        lines,
+        created_by: user?.id ?? undefined,
       });
     }
 

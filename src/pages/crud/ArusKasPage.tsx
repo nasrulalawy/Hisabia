@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
 import { formatIdr, formatDate } from "@/lib/utils";
+import { postJournalEntry } from "@/lib/accounting";
 import { DataTable, type Column } from "@/components/crud/DataTable";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
@@ -89,9 +90,35 @@ export function ArusKasPage() {
         fetchData();
       }
     } else {
-      const { error: err } = await supabase.from("cash_flows").insert(payload);
+      const { data: inserted, error: err } = await supabase.from("cash_flows").insert(payload).select("id").single();
       if (err) setError(err.message);
-      else {
+      else if (inserted) {
+        const entryDate = new Date().toISOString().slice(0, 10);
+        if (form.type === "in") {
+          await postJournalEntry({
+            organization_id: orgId,
+            entry_date: entryDate,
+            description: form.description.trim() || "Kas masuk",
+            reference_type: "cash_flow",
+            reference_id: inserted.id,
+            lines: [
+              { code: "1-1", debit: amount, credit: 0 },
+              { code: "4-2", debit: 0, credit: amount },
+            ],
+          });
+        } else {
+          await postJournalEntry({
+            organization_id: orgId,
+            entry_date: entryDate,
+            description: form.description.trim() || "Kas keluar",
+            reference_type: "cash_flow",
+            reference_id: inserted.id,
+            lines: [
+              { code: "5-2", debit: amount, credit: 0 },
+              { code: "1-1", debit: 0, credit: amount },
+            ],
+          });
+        }
         setModalOpen(false);
         fetchData();
       }

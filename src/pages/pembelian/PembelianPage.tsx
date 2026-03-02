@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
 import { formatIdr, parsePriceIdr } from "@/lib/utils";
+import { postJournalEntry } from "@/lib/accounting";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -139,24 +140,60 @@ export function PembelianPage() {
           .eq("id", item.product_id);
       }
 
+      const entryDate = new Date().toISOString().slice(0, 10);
+      const descPurchase = `Pembelian dari ${suppliers.find((s) => s.id === form.supplier_id)?.name ?? "supplier"}`;
       if (form.payment === "cash" && totalAmount > 0) {
-        await supabase.from("cash_flows").insert({
-          organization_id: orgId,
-          type: "out",
-          amount: totalAmount,
-          description: `Pembelian dari ${suppliers.find((s) => s.id === form.supplier_id)?.name ?? "supplier"}`,
-          reference_type: "purchase",
-          notes: form.notes.trim() || null,
-        });
+        const { data: cf } = await supabase
+          .from("cash_flows")
+          .insert({
+            organization_id: orgId,
+            type: "out",
+            amount: totalAmount,
+            description: descPurchase,
+            reference_type: "purchase",
+            notes: form.notes.trim() || null,
+          })
+          .select("id")
+          .single();
+        if (cf) {
+          await postJournalEntry({
+            organization_id: orgId,
+            entry_date: entryDate,
+            description: descPurchase,
+            reference_type: "cash_flow",
+            reference_id: cf.id,
+            lines: [
+              { code: "1-3", debit: totalAmount, credit: 0 },
+              { code: "1-1", debit: 0, credit: totalAmount },
+            ],
+          });
+        }
       } else if (form.payment === "credit" && form.supplier_id && totalAmount > 0) {
-        await supabase.from("payables").insert({
-          organization_id: orgId,
-          supplier_id: form.supplier_id,
-          amount: totalAmount,
-          paid: 0,
-          due_date: form.due_date || null,
-          notes: form.notes.trim() || null,
-        });
+        const { data: pay } = await supabase
+          .from("payables")
+          .insert({
+            organization_id: orgId,
+            supplier_id: form.supplier_id,
+            amount: totalAmount,
+            paid: 0,
+            due_date: form.due_date || null,
+            notes: form.notes.trim() || null,
+          })
+          .select("id")
+          .single();
+        if (pay) {
+          await postJournalEntry({
+            organization_id: orgId,
+            entry_date: entryDate,
+            description: descPurchase,
+            reference_type: "payable",
+            reference_id: pay.id,
+            lines: [
+              { code: "1-3", debit: totalAmount, credit: 0 },
+              { code: "2-1", debit: 0, credit: totalAmount },
+            ],
+          });
+        }
       }
 
       setItems([]);

@@ -308,3 +308,39 @@ export interface StockOpnameLine {
   created_at: string;
   updated_at: string;
 }
+
+export type AccountType = "asset" | "liability" | "equity" | "revenue" | "expense";
+
+export interface ChartOfAccount {
+  id: string;
+  organization_id: string;
+  code: string;
+  name: string;
+  account_type: AccountType;
+  parent_id: string | null;
+  is_system: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JournalEntry {
+  id: string;
+  organization_id: string;
+  entry_date: string;
+  number: string | null;
+  description: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JournalEntryLine {
+  id: string;
+  journal_entry_id: string;
+  account_id: string;
+  debit: number;
+  credit: number;
+  memo: string | null;
+  created_at: string;
+}
