@@ -97,11 +97,11 @@ export function Home() {
             <Link to="/register" className="font-medium text-white/95 hover:text-white">
               Gratis coba 14 hari
             </Link>
-            <a href="tel:+6281210104000" className="flex items-center gap-1.5 text-white/90 hover:text-white">
+            <a href="tel:+6285156514096" className="flex items-center gap-1.5 text-white/90 hover:text-white">
               <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
                 <path d="M2 3a1 1 0 011-1h2.586a1 1 0 01.707.293L8 5.586A1 1 0 018.414 7L6.293 9.121a1 1 0 00-.293.707v6a1 1 0 001 1h6a1 1 0 001-1v-2.586a1 1 0 01.293-.707L13 11.586a1 1 0 01.707-.293H17a1 1 0 011 1v2a1 1 0 01-1 1H3a1 1 0 01-1-1V3z" />
               </svg>
-              0812 1010 4000
+              0851 5651 4096
             </a>
           </div>
           <div className="flex items-center gap-4">
@@ -404,7 +404,7 @@ export function Home() {
             </p>
           </div>
           <a
-            href="tel:+6281210104000"
+            href="tel:+6285156514096"
             className="shrink-0 rounded-xl bg-white px-8 py-4 text-base font-semibold text-[#0d3d36] transition hover:bg-white/95"
           >
             Hubungi Sales
@@ -467,7 +467,7 @@ export function Home() {
             <p className="text-sm text-white/60">
               © {new Date().getFullYear()} Hisabia. Kebijakan Privasi · Syarat & Ketentuan
             </p>
-            <p className="text-sm text-white/60">0812-1010-4000 · hisabia@example.com</p>
+            <p className="text-sm text-white/60">0851-5651-4096 · hisabia@example.com</p>
           </div>
         </div>
       </footer>

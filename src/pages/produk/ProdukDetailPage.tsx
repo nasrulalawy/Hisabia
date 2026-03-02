@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
 import { formatIdr, parsePriceIdr } from "@/lib/utils";
+import { printLabelNiimbot, buildNiimbotLabelLines } from "@/lib/niimbot";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -38,7 +39,14 @@ export function ProdukDetailPage() {
   const navigate = useNavigate();
   const baseOrgId = orgId ?? ctxOrgId;
 
-  const [product, setProduct] = useState<{ id: string; name: string } | null>(null);
+  const [product, setProduct] = useState<{
+    id: string;
+    name: string;
+    cost_price?: number;
+    stock?: number;
+    selling_price?: number;
+    barcode?: string | null;
+  } | null>(null);
   const [productUnits, setProductUnits] = useState<ProductUnitRow[]>([]);
   const [productPrices, setProductPrices] = useState<ProductPriceRow[]>([]);
   const [units, setUnits] = useState<{ id: string; name: string; symbol: string }[]>([]);
@@ -46,6 +54,7 @@ export function ProdukDetailPage() {
   const [loading, setLoading] = useState(true);
   const [unitModal, setUnitModal] = useState(false);
   const [priceModal, setPriceModal] = useState(false);
+  const [niimbotPrinting, setNiimbotPrinting] = useState(false);
   const [unitForm, setUnitForm] = useState({ unit_id: "", conversion: "1", is_base: false });
   const [priceForm, setPriceForm] = useState({
     unit_id: "",
@@ -58,7 +67,7 @@ export function ProdukDetailPage() {
     if (!baseOrgId || !productId) return;
     setLoading(true);
     const [prodRes, puRes, ppRes, unitRes, custRes] = await Promise.all([
-      supabase.from("products").select("id, name").eq("id", productId).single(),
+      supabase.from("products").select("id, name, cost_price, stock, selling_price, barcode").eq("id", productId).single(),
       supabase
         .from("product_units")
         .select("id, unit_id, conversion_to_base, is_base, units(name, symbol)")
@@ -157,15 +166,46 @@ export function ProdukDetailPage() {
           <h2 className="text-2xl font-semibold text-[var(--foreground)]">{product.name}</h2>
           <p className="text-[var(--muted-foreground)]">Multi satuan & multi harga</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => navigate(`/org/${baseOrgId}/produk/${productId as string}/edit`)}>
             Edit Data Dasar
+          </Button>
+          <Button
+            variant="outline"
+            disabled={niimbotPrinting || !("bluetooth" in navigator && navigator.bluetooth)}
+            onClick={async () => {
+              if (!product) return;
+              setNiimbotPrinting(true);
+              try {
+                const lines = buildNiimbotLabelLines({
+                  name: product.name,
+                  barcode: product.barcode ?? undefined,
+                  price: product.selling_price,
+                  sku: product.id,
+                  stock: product.stock,
+                });
+                await printLabelNiimbot(lines);
+              } catch (err) {
+                alert(err instanceof Error ? err.message : "Gagal cetak label NiiMBot");
+              } finally {
+                setNiimbotPrinting(false);
+              }
+            }}
+          >
+            {niimbotPrinting ? "Mencetak..." : "Cetak label NiiMBot"}
           </Button>
           <Button variant="outline" onClick={() => navigate(`/org/${baseOrgId}/produk`)}>
             Kembali
           </Button>
         </div>
       </div>
+
+      {typeof product.cost_price === "number" && typeof product.stock === "number" && (
+        <p className="text-sm text-[var(--muted-foreground)]">
+          Total Harga Modal: <span className="font-semibold text-[var(--foreground)]">{formatIdr(Number(product.cost_price) * Number(product.stock))}</span>
+          {" "}(HPP × stok)
+        </p>
+      )}
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">

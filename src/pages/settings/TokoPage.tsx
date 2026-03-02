@@ -10,6 +10,12 @@ import {
   setReceiptLocalUrl,
   type ReceiptPrinterType,
 } from "@/lib/receipt";
+import {
+  getNiimbotLabelFields,
+  setNiimbotLabelFields,
+  NIIMBOT_LABEL_FIELD_OPTIONS,
+  type NiimbotLabelFieldId,
+} from "@/lib/niimbot";
 
 export function TokoPage() {
   const { orgId } = useOrg();
@@ -22,10 +28,12 @@ export function TokoPage() {
   const [receiptPrinter, setReceiptPrinter] = useState<ReceiptPrinterType>("dialog");
 
   const [localPrintUrl, setLocalPrintUrl] = useState("http://localhost:3999");
+  const [niimbotLabelFields, setNiimbotLabelFieldsState] = useState<NiimbotLabelFieldId[]>([]);
 
   useEffect(() => {
     setReceiptPrinter(getReceiptPrinterType());
     setLocalPrintUrl(getReceiptLocalUrl());
+    setNiimbotLabelFieldsState(getNiimbotLabelFields());
   }, []);
 
   function handleReceiptPrinterChange(value: ReceiptPrinterType) {
@@ -187,6 +195,96 @@ export function TokoPage() {
             </p>
           </div>
         )}
+      </div>
+
+      <div className="max-w-md space-y-4 border-t border-[var(--border)] pt-6">
+        <h3 className="text-lg font-medium text-[var(--foreground)]">Label NiiMBot</h3>
+        <p className="text-sm text-[var(--muted-foreground)]">
+          Atur isi label yang dicetak ke printer NiiMBot (Bluetooth). Urutan field = urutan baris di label.
+        </p>
+        <div>
+          <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
+            Field yang ditampilkan (urutan dari atas ke bawah)
+          </label>
+          <ul className="space-y-2">
+            {niimbotLabelFields.map((fieldId, index) => {
+              const opt = NIIMBOT_LABEL_FIELD_OPTIONS.find((o) => o.id === fieldId);
+              return (
+                <li
+                  key={fieldId}
+                  className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--muted)]/30 px-3 py-2"
+                >
+                  <span className="flex-1 text-sm">{opt?.label ?? fieldId}</span>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      disabled={index === 0}
+                      onClick={() => {
+                        const next = [...niimbotLabelFields];
+                        const t = next[index - 1];
+                        next[index - 1] = next[index];
+                        next[index] = t;
+                        setNiimbotLabelFieldsState(next);
+                        setNiimbotLabelFields(next);
+                      }}
+                      className="rounded border border-[var(--border)] px-2 py-1 text-xs disabled:opacity-50"
+                    >
+                      Naik
+                    </button>
+                    <button
+                      type="button"
+                      disabled={index === niimbotLabelFields.length - 1}
+                      onClick={() => {
+                        const next = [...niimbotLabelFields];
+                        const t = next[index + 1];
+                        next[index + 1] = next[index];
+                        next[index] = t;
+                        setNiimbotLabelFieldsState(next);
+                        setNiimbotLabelFields(next);
+                      }}
+                      className="rounded border border-[var(--border)] px-2 py-1 text-xs disabled:opacity-50"
+                    >
+                      Turun
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = niimbotLabelFields.filter((_, i) => i !== index);
+                        setNiimbotLabelFieldsState(next);
+                        setNiimbotLabelFields(next);
+                      }}
+                      className="rounded border border-red-200 px-2 py-1 text-xs text-red-600"
+                    >
+                      Hapus
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+          {niimbotLabelFields.length === 0 && (
+            <p className="text-sm text-[var(--muted-foreground)]">Belum ada field. Tambah di bawah.</p>
+          )}
+        </div>
+        <div>
+          <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Tambah field</label>
+          <div className="flex flex-wrap gap-2">
+            {NIIMBOT_LABEL_FIELD_OPTIONS.filter((o) => !niimbotLabelFields.includes(o.id)).map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => {
+                  const next = [...niimbotLabelFields, opt.id];
+                  setNiimbotLabelFieldsState(next);
+                  setNiimbotLabelFields(next);
+                }}
+                className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm hover:bg-[var(--muted)]"
+              >
+                + {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

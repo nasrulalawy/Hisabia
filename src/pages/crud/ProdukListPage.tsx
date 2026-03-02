@@ -112,6 +112,11 @@ export function ProdukListPage() {
       render: (row) => formatIdr(Number(row.cost_price)),
     },
     {
+      key: "total_modal",
+      header: "Total Harga Modal",
+      render: (row) => formatIdr(Number(row.cost_price ?? 0) * Number(row.stock ?? 0)),
+    },
+    {
       key: "selling_price",
       header: "Harga Jual",
       render: (row) => formatIdr(Number(row.selling_price)),

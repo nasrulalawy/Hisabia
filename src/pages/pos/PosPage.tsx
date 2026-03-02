@@ -18,6 +18,7 @@ import {
   getReceiptPrinterType,
   getReceiptLocalUrl,
 } from "@/lib/receipt";
+import { printLabelNiimbot, buildNiimbotLabelLines } from "@/lib/niimbot";
 
 interface ProductUnitRow {
   id: string;
@@ -132,6 +133,8 @@ export function PosPage() {
   const [lastReceipt, setLastReceipt] = useState<ReceiptData | null>(null);
   const [bluetoothPrinting, setBluetoothPrinting] = useState(false);
   const [bluetoothPrintError, setBluetoothPrintError] = useState<string | null>(null);
+  const [niimbotLabelPrinting, setNiimbotLabelPrinting] = useState(false);
+  const [niimbotLabelError, setNiimbotLabelError] = useState<string | null>(null);
 
   useEffect(() => {
     if (cart.length === 0) setSelectedCartIndex(null);
@@ -1192,9 +1195,35 @@ export function PosPage() {
                 >
                   App lokal
                 </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 min-w-0"
+                  disabled={niimbotLabelPrinting || !("bluetooth" in navigator && navigator.bluetooth)}
+                  onClick={async () => {
+                    if (!lastReceipt || lastReceipt.items.length === 0) return;
+                    setNiimbotLabelError(null);
+                    setNiimbotLabelPrinting(true);
+                    try {
+                      const first = lastReceipt.items[0];
+                      const lines = buildNiimbotLabelLines({
+                        name: first.name,
+                        price: first.price,
+                      });
+                      await printLabelNiimbot(lines);
+                    } catch (err) {
+                      setNiimbotLabelError(err instanceof Error ? err.message : "Gagal cetak label NiiMBot");
+                    } finally {
+                      setNiimbotLabelPrinting(false);
+                    }
+                  }}
+                >
+                  {niimbotLabelPrinting ? "Mencetak..." : "Label NiiMBot"}
+                </Button>
               </div>
-              {bluetoothPrintError && (
-                <p className="text-center text-xs text-red-600">{bluetoothPrintError}</p>
+              {(bluetoothPrintError || niimbotLabelError) && (
+                <p className="text-center text-xs text-red-600">{bluetoothPrintError ?? niimbotLabelError}</p>
               )}
             </div>
           )}
