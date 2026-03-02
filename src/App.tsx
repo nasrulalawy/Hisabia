@@ -15,6 +15,7 @@ import { PelangganPage } from "@/pages/crud/PelangganPage";
 import { ProdukListPage } from "@/pages/crud/ProdukListPage";
 import { ProdukFormPage } from "@/pages/crud/ProdukFormPage";
 import { ProdukDetailPage } from "@/pages/produk/ProdukDetailPage";
+import { BahanPage } from "@/pages/crud/BahanPage";
 import { ArusKasPage } from "@/pages/crud/ArusKasPage";
 import { HutangPiutangPage } from "@/pages/crud/HutangPiutangPage";
 import { GudangPage } from "@/pages/crud/GudangPage";
@@ -154,6 +155,7 @@ export default function App() {
           <Route path="produk/tambah" element={<ProdukFormPage />} />
           <Route path="produk/:id/edit" element={<ProdukFormPage />} />
           <Route path="produk/:id" element={<ProdukDetailPage />} />
+          <Route path="bahan" element={<BahanPage />} />
           <Route path="satuan" element={<SatuanPage />} />
           <Route path="supplier" element={<SupplierPage />} />
           <Route path="pelanggan" element={<PelangganPage />} />

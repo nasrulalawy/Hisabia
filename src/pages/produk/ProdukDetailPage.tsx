@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
 import { formatIdr, parsePriceIdr } from "@/lib/utils";
-import { printLabelNiimbot, buildNiimbotLabelLines } from "@/lib/niimbot";
+import { printLabelNiimbot } from "@/lib/niimbot";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -27,6 +27,26 @@ interface ProductPriceRow {
   customers?: { name: string } | null;
 }
 
+interface ProductIngredientRow {
+  id: string;
+  product_id: string;
+  ingredient_id: string;
+  quantity: number;
+  ingredients?: { name: string; cost_per_unit: number; units?: { symbol: string } | null } | null;
+}
+
+interface ProductVariantRow {
+  id: string;
+  product_id: string;
+  name: string;
+  selling_price: number | null;
+  cost_price: number | null;
+  price_type: "replace" | "addon";
+  show_on_label: boolean;
+  sort_order: number;
+  is_available: boolean;
+}
+
 const PRICE_TYPES = [
   { value: "retail", label: "Retail (ecer)" },
   { value: "grosir", label: "Grosir" },
@@ -46,14 +66,21 @@ export function ProdukDetailPage() {
     stock?: number;
     selling_price?: number;
     barcode?: string | null;
+    use_ingredients_for_cost?: boolean;
   } | null>(null);
   const [productUnits, setProductUnits] = useState<ProductUnitRow[]>([]);
   const [productPrices, setProductPrices] = useState<ProductPriceRow[]>([]);
+  const [productIngredients, setProductIngredients] = useState<ProductIngredientRow[]>([]);
+  const [productVariants, setProductVariants] = useState<ProductVariantRow[]>([]);
+  const [ingredients, setIngredients] = useState<{ id: string; name: string; units?: { symbol: string } | null }[]>([]);
   const [units, setUnits] = useState<{ id: string; name: string; symbol: string }[]>([]);
   const [customers, setCustomers] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [unitModal, setUnitModal] = useState(false);
   const [priceModal, setPriceModal] = useState(false);
+  const [ingredientModal, setIngredientModal] = useState(false);
+  const [variantModal, setVariantModal] = useState(false);
+  const [editingVariant, setEditingVariant] = useState<ProductVariantRow | null>(null);
   const [niimbotPrinting, setNiimbotPrinting] = useState(false);
   const [unitForm, setUnitForm] = useState({ unit_id: "", conversion: "1", is_base: false });
   const [priceForm, setPriceForm] = useState({
@@ -62,12 +89,23 @@ export function ProdukDetailPage() {
     price: "",
     customer_id: "",
   });
+  const [ingredientForm, setIngredientForm] = useState({ ingredient_id: "", quantity: "1" });
+  const [variantForm, setVariantForm] = useState({
+    name: "",
+    selling_price: "",
+    cost_price: "",
+    price_type: "replace" as "replace" | "addon",
+    show_on_label: true,
+    is_available: true,
+  });
+  const [labelModalOpen, setLabelModalOpen] = useState(false);
+  const [labelSelections, setLabelSelections] = useState<{ product: boolean; variantIds: Set<string> }>({ product: true, variantIds: new Set() });
 
   async function fetchData() {
     if (!baseOrgId || !productId) return;
     setLoading(true);
-    const [prodRes, puRes, ppRes, unitRes, custRes] = await Promise.all([
-      supabase.from("products").select("id, name, cost_price, stock, selling_price, barcode").eq("id", productId).single(),
+    const [prodRes, puRes, ppRes, piRes, ingRes, unitRes, custRes] = await Promise.all([
+      supabase.from("products").select("id, name, cost_price, stock, selling_price, barcode, use_ingredients_for_cost").eq("id", productId).single(),
       supabase
         .from("product_units")
         .select("id, unit_id, conversion_to_base, is_base, units(name, symbol)")
@@ -76,14 +114,38 @@ export function ProdukDetailPage() {
         .from("product_prices")
         .select("id, unit_id, customer_id, price, price_type, units(name, symbol), customers(name)")
         .eq("product_id", productId),
+      supabase
+        .from("product_ingredients")
+        .select("id, product_id, ingredient_id, quantity, ingredients(name, cost_per_unit, units(symbol))")
+        .eq("product_id", productId),
+      supabase.from("ingredients").select("id, name, units(symbol)").eq("organization_id", baseOrgId).order("name"),
       supabase.from("units").select("id, name, symbol").eq("organization_id", baseOrgId).order("name"),
       supabase.from("customers").select("id, name").eq("organization_id", baseOrgId).order("name"),
     ]);
     setProduct(prodRes.data ?? null);
     setProductUnits((puRes.data as unknown as ProductUnitRow[]) ?? []);
     setProductPrices((ppRes.data as unknown as ProductPriceRow[]) ?? []);
+    setProductIngredients((piRes.data as unknown as ProductIngredientRow[]) ?? []);
+    setIngredients((ingRes.data as unknown as { id: string; name: string; units?: { symbol: string } | null }[]) ?? []);
     setUnits(unitRes.data ?? []);
     setCustomers(custRes.data ?? []);
+
+    const pvResFull = await supabase
+      .from("product_variants")
+      .select("id, product_id, name, selling_price, cost_price, price_type, show_on_label, sort_order, is_available")
+      .eq("product_id", productId)
+      .order("sort_order");
+    if (pvResFull.error) {
+      const pvResBase = await supabase
+        .from("product_variants")
+        .select("id, product_id, name, selling_price, cost_price, sort_order, is_available")
+        .eq("product_id", productId)
+        .order("sort_order");
+      const rows = (pvResBase.data ?? []) as ProductVariantRow[];
+      setProductVariants(rows.map((r) => ({ ...r, price_type: "replace" as const, show_on_label: true })));
+    } else {
+      setProductVariants((pvResFull.data as unknown as ProductVariantRow[]) ?? []);
+    }
     setLoading(false);
   }
 
@@ -143,6 +205,92 @@ export function ProdukDetailPage() {
     fetchData();
   }
 
+  async function toggleUseIngredientsForCost() {
+    if (!productId || !product) return;
+    const next = !product.use_ingredients_for_cost;
+    await supabase.from("products").update({ use_ingredients_for_cost: next, updated_at: new Date().toISOString() }).eq("id", productId);
+    fetchData();
+  }
+
+  async function addProductIngredient() {
+    if (!productId || !ingredientForm.ingredient_id) return;
+    const qty = parseFloat(ingredientForm.quantity.replace(",", ".")) || 1;
+    await supabase.from("product_ingredients").insert({ product_id: productId, ingredient_id: ingredientForm.ingredient_id, quantity: qty });
+    setIngredientModal(false);
+    setIngredientForm({ ingredient_id: "", quantity: "1" });
+    fetchData();
+  }
+
+  async function deleteProductIngredient(id: string) {
+    await supabase.from("product_ingredients").delete().eq("id", id);
+    fetchData();
+  }
+
+  function openAddVariant() {
+    setEditingVariant(null);
+    setVariantForm({ name: "", selling_price: "", cost_price: "", price_type: "replace", show_on_label: true, is_available: true });
+    setVariantModal(true);
+  }
+
+  function openEditVariant(v: ProductVariantRow) {
+    setEditingVariant(v);
+    setVariantForm({
+      name: v.name,
+      selling_price: v.selling_price != null ? String(v.selling_price) : "",
+      cost_price: v.cost_price != null ? String(v.cost_price) : "",
+      price_type: v.price_type ?? "replace",
+      show_on_label: v.show_on_label ?? true,
+      is_available: v.is_available,
+    });
+    setVariantModal(true);
+  }
+
+  async function saveVariant() {
+    if (!productId || !variantForm.name.trim()) return;
+    const selling = variantForm.selling_price ? parsePriceIdr(variantForm.selling_price) : null;
+    const cost = variantForm.cost_price ? parsePriceIdr(variantForm.cost_price) : null;
+    const priceType = variantForm.price_type || "replace";
+    const showOnLabel = variantForm.show_on_label ?? true;
+    const basePayload = {
+      name: variantForm.name.trim(),
+      selling_price: selling,
+      cost_price: cost,
+      is_available: variantForm.is_available,
+    };
+    if (editingVariant) {
+      let err = await supabase
+        .from("product_variants")
+        .update({ ...basePayload, price_type: priceType, show_on_label: showOnLabel, updated_at: new Date().toISOString() })
+        .eq("id", editingVariant.id);
+      if (err.error) {
+        await supabase.from("product_variants").update({ ...basePayload, updated_at: new Date().toISOString() }).eq("id", editingVariant.id);
+      }
+    } else {
+      let err = await supabase.from("product_variants").insert({
+        product_id: productId,
+        ...basePayload,
+        price_type: priceType,
+        show_on_label: showOnLabel,
+        sort_order: productVariants.length,
+      });
+      if (err.error) {
+        await supabase.from("product_variants").insert({
+          product_id: productId,
+          ...basePayload,
+          sort_order: productVariants.length,
+        });
+      }
+    }
+    setVariantModal(false);
+    setEditingVariant(null);
+    fetchData();
+  }
+
+  async function deleteVariant(id: string) {
+    await supabase.from("product_variants").delete().eq("id", id);
+    fetchData();
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -173,23 +321,12 @@ export function ProdukDetailPage() {
           <Button
             variant="outline"
             disabled={niimbotPrinting || !("bluetooth" in navigator && navigator.bluetooth)}
-            onClick={async () => {
-              if (!product) return;
-              setNiimbotPrinting(true);
-              try {
-                const lines = buildNiimbotLabelLines({
-                  name: product.name,
-                  barcode: product.barcode ?? undefined,
-                  price: product.selling_price,
-                  sku: product.id,
-                  stock: product.stock,
-                });
-                await printLabelNiimbot(lines);
-              } catch (err) {
-                alert(err instanceof Error ? err.message : "Gagal cetak label NiiMBot");
-              } finally {
-                setNiimbotPrinting(false);
-              }
+            onClick={() => {
+              setLabelSelections({
+                product: true,
+                variantIds: new Set(productVariants.filter((v) => v.show_on_label !== false).map((v) => v.id)),
+              });
+              setLabelModalOpen(true);
             }}
           >
             {niimbotPrinting ? "Mencetak..." : "Cetak label NiiMBot"}
@@ -292,6 +429,130 @@ export function ProdukDetailPage() {
                         onClick={() => deletePrice(pp.id)}
                         className="text-red-600 hover:underline"
                       >
+                        Hapus
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Resep (Bahan)</CardTitle>
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={!!product?.use_ingredients_for_cost}
+                onChange={toggleUseIngredientsForCost}
+                className="h-4 w-4 rounded border-[var(--border)]"
+              />
+              HPP dari resep
+            </label>
+            <Button size="sm" onClick={() => setIngredientModal(true)}>
+              + Tambah Bahan
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <p className="mb-3 text-sm text-[var(--muted-foreground)]">
+            Lampirkan bahan (ingredients) untuk hitung HPP otomatis. Aktifkan &quot;HPP dari resep&quot; agar cost_price produk mengikuti total biaya bahan.
+          </p>
+          {productIngredients.length === 0 ? (
+            <p className="text-[var(--muted-foreground)]">Belum ada bahan. Klik Tambah Bahan dan pilih dari master Bahan.</p>
+          ) : (
+            <>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-[var(--border)] text-left text-[var(--muted-foreground)]">
+                    <th className="pb-2 font-medium">Bahan</th>
+                    <th className="pb-2 font-medium">Jumlah</th>
+                    <th className="pb-2 font-medium">Subtotal HPP</th>
+                    <th className="w-20 pb-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {productIngredients.map((pi) => {
+                    const cost = (pi.ingredients?.cost_per_unit ?? 0) * pi.quantity;
+                    return (
+                      <tr key={pi.id} className="border-b border-[var(--border)]">
+                        <td className="py-2">{pi.ingredients?.name ?? "-"}</td>
+                        <td className="py-2">
+                          {pi.quantity} {pi.ingredients?.units?.symbol ?? ""}
+                        </td>
+                        <td className="py-2">{formatIdr(cost)}</td>
+                        <td className="py-2">
+                          <button type="button" onClick={() => deleteProductIngredient(pi.id)} className="text-red-600 hover:underline">
+                            Hapus
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {product?.use_ingredients_for_cost && (
+                <p className="mt-3 text-sm font-medium text-[var(--foreground)]">
+                  Total HPP (dari resep): {formatIdr(product.cost_price ?? 0)}
+                </p>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Variant</CardTitle>
+          <Button size="sm" onClick={openAddVariant}>
+            + Tambah Variant
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <p className="mb-3 text-sm text-[var(--muted-foreground)]">
+            Variant produk (mis. Reguler, Less Sugar). Harga jual bisa ganti total atau add-on. HPP selalu tambahan (bisa + atau −).
+          </p>
+          {productVariants.length === 0 ? (
+            <p className="text-[var(--muted-foreground)]">Belum ada variant.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-[var(--border)] text-left text-[var(--muted-foreground)]">
+                  <th className="pb-2 font-medium">Nama</th>
+                  <th className="pb-2 font-medium">Jenis Harga</th>
+                  <th className="pb-2 font-medium">Harga Jual</th>
+                  <th className="pb-2 font-medium">Tambahan HPP</th>
+                  <th className="pb-2 font-medium">Aktif</th>
+                  <th className="pb-2 font-medium">Di label</th>
+                  <th className="w-24 pb-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {productVariants.map((pv) => (
+                  <tr key={pv.id} className="border-b border-[var(--border)]">
+                    <td className="py-2">{pv.name}</td>
+                    <td className="py-2">{(pv.price_type ?? "replace") === "addon" ? "Add-on" : "Ganti total"}</td>
+                    <td className="py-2">
+                      {(pv.price_type ?? "replace") === "addon"
+                        ? (pv.selling_price != null ? `+ ${formatIdr(pv.selling_price)}` : "Default")
+                        : (pv.selling_price != null ? formatIdr(pv.selling_price) : "Default")}
+                    </td>
+                    <td className="py-2">
+                      {pv.cost_price != null
+                        ? (pv.cost_price >= 0 ? `+ ${formatIdr(pv.cost_price)}` : `− ${formatIdr(-pv.cost_price)}`)
+                        : "0"}
+                    </td>
+                    <td className="py-2">{pv.is_available ? "Ya" : "Tidak"}</td>
+                    <td className="py-2">{pv.show_on_label !== false ? "Ya" : "Tidak"}</td>
+                    <td className="py-2">
+                      <button type="button" onClick={() => openEditVariant(pv)} className="mr-2 text-[var(--primary)] hover:underline">
+                        Edit
+                      </button>
+                      <button type="button" onClick={() => deleteVariant(pv.id)} className="text-red-600 hover:underline">
                         Hapus
                       </button>
                     </td>
@@ -412,6 +673,232 @@ export function ProdukDetailPage() {
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setPriceModal(false)}>Batal</Button>
             <Button onClick={addPrice}>Tambah</Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={ingredientModal} onClose={() => setIngredientModal(false)} title="Tambah Bahan ke Resep">
+        <div className="space-y-4">
+          <div>
+            <label className="mb-2 block text-sm font-medium">Bahan *</label>
+            <select
+              value={ingredientForm.ingredient_id}
+              onChange={(e) => setIngredientForm((f) => ({ ...f, ingredient_id: e.target.value }))}
+              className="h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3"
+            >
+              <option value="">-- Pilih Bahan --</option>
+              {ingredients
+                .filter((i) => !productIngredients.some((pi) => pi.ingredient_id === i.id))
+                .map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.name} ({i.units?.symbol ?? ""})
+                  </option>
+                ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-medium">Jumlah (dalam satuan bahan) *</label>
+            <Input
+              type="text"
+              inputMode="decimal"
+              value={ingredientForm.quantity}
+              onChange={(e) => setIngredientForm((f) => ({ ...f, quantity: e.target.value }))}
+              placeholder="1"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setIngredientModal(false)}>Batal</Button>
+            <Button onClick={addProductIngredient}>Tambah</Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={variantModal} onClose={() => { setVariantModal(false); setEditingVariant(null); }} title={editingVariant ? "Edit Variant" : "Tambah Variant"}>
+        <div className="space-y-4">
+          <div>
+            <label className="mb-2 block text-sm font-medium">Nama variant *</label>
+            <Input
+              value={variantForm.name}
+              onChange={(e) => setVariantForm((f) => ({ ...f, name: e.target.value }))}
+              placeholder="Contoh: Reguler, Less Sugar"
+              required
+            />
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-medium">Jenis harga jual</label>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="price_type"
+                  checked={variantForm.price_type === "replace"}
+                  onChange={() => setVariantForm((f) => ({ ...f, price_type: "replace" }))}
+                  className="h-4 w-4 border-[var(--border)]"
+                />
+                <span className="text-sm">Ganti total</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="price_type"
+                  checked={variantForm.price_type === "addon"}
+                  onChange={() => setVariantForm((f) => ({ ...f, price_type: "addon" }))}
+                  className="h-4 w-4 border-[var(--border)]"
+                />
+                <span className="text-sm">Add-on (tambahan)</span>
+              </label>
+            </div>
+            <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+              {variantForm.price_type === "replace"
+                ? "Harga jual variant menggantikan harga dasar produk."
+                : "Nilai ditambah ke harga dasar produk (mis. + Rp 5.000)."}
+            </p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-2 block text-sm font-medium">
+                {variantForm.price_type === "addon" ? "Tambahan harga (Rp)" : "Harga jual (kosong = pakai dari produk)"}
+              </label>
+              <Input
+                type="text"
+                inputMode="decimal"
+                value={variantForm.selling_price}
+                onChange={(e) => setVariantForm((f) => ({ ...f, selling_price: e.target.value }))}
+                placeholder={variantForm.price_type === "addon" ? "0" : "Opsional"}
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium">Tambahan HPP (bisa negatif, kosong = 0)</label>
+              <Input
+                type="text"
+                inputMode="decimal"
+                value={variantForm.cost_price}
+                onChange={(e) => setVariantForm((f) => ({ ...f, cost_price: e.target.value }))}
+                placeholder="Contoh: 2000 atau -1000"
+              />
+              <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                Ditambah ke HPP produk. Isi negatif (mis. -1000) untuk pengurangan.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={variantForm.is_available}
+                onChange={(e) => setVariantForm((f) => ({ ...f, is_available: e.target.checked }))}
+                className="h-4 w-4 rounded border-[var(--border)]"
+              />
+              <span className="text-sm">Variant aktif</span>
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={variantForm.show_on_label}
+                onChange={(e) => setVariantForm((f) => ({ ...f, show_on_label: e.target.checked }))}
+                className="h-4 w-4 rounded border-[var(--border)]"
+              />
+              <span className="text-sm">Tampil di label (cetak NiiMBot)</span>
+            </label>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => { setVariantModal(false); setEditingVariant(null); }}>Batal</Button>
+            <Button onClick={saveVariant}>{editingVariant ? "Simpan" : "Tambah"}</Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={labelModalOpen} onClose={() => setLabelModalOpen(false)} title="Cetak label NiiMBot" size="sm">
+        <div className="space-y-4">
+          <p className="text-sm text-[var(--muted-foreground)]">
+            Pilih yang akan dicetak. Variant yang &quot;Tampil di label&quot; muncul di sini.
+          </p>
+          <div className="space-y-2">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={labelSelections.product}
+                onChange={(e) => setLabelSelections((s) => ({ ...s, product: e.target.checked }))}
+                className="h-4 w-4 rounded border-[var(--border)]"
+              />
+              <span className="text-sm">{product?.name ?? "Produk"} (harga default)</span>
+            </label>
+            {productVariants
+              .filter((v) => v.show_on_label !== false)
+              .map((pv) => {
+                const effectivePrice =
+                  (pv.price_type ?? "replace") === "addon"
+                    ? (product?.selling_price ?? 0) + (pv.selling_price ?? 0)
+                    : (pv.selling_price ?? product?.selling_price ?? 0);
+                return (
+                  <label key={pv.id} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={labelSelections.variantIds.has(pv.id)}
+                      onChange={(e) => {
+                        setLabelSelections((s) => {
+                          const next = new Set(s.variantIds);
+                          if (e.target.checked) next.add(pv.id);
+                          else next.delete(pv.id);
+                          return { ...s, variantIds: next };
+                        });
+                      }}
+                      className="h-4 w-4 rounded border-[var(--border)]"
+                    />
+                    <span className="text-sm">
+                      {product?.name} – {pv.name} ({formatIdr(effectivePrice)})
+                    </span>
+                  </label>
+                );
+              })}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setLabelModalOpen(false)}>
+              Batal
+            </Button>
+            <Button
+              disabled={
+                niimbotPrinting ||
+                (!labelSelections.product && labelSelections.variantIds.size === 0)
+              }
+              onClick={async () => {
+                if (!product) return;
+                setNiimbotPrinting(true);
+                try {
+                  if (labelSelections.product) {
+                    await printLabelNiimbot({
+                      name: product.name ?? "",
+                      barcode: product.barcode ?? undefined,
+                      price: product.selling_price,
+                      sku: product.id,
+                      stock: product.stock,
+                    });
+                  }
+                  for (const variantId of labelSelections.variantIds) {
+                    const pv = productVariants.find((v) => v.id === variantId);
+                    if (!pv) continue;
+                    const effectivePrice =
+                      (pv.price_type ?? "replace") === "addon"
+                        ? (product.selling_price ?? 0) + (pv.selling_price ?? 0)
+                        : (pv.selling_price ?? product.selling_price ?? 0);
+                    await printLabelNiimbot({
+                      name: `${product.name} – ${pv.name}`,
+                      barcode: product.barcode ?? undefined,
+                      price: effectivePrice,
+                      sku: product.id,
+                      stock: product.stock,
+                    });
+                  }
+                  setLabelModalOpen(false);
+                } catch (err) {
+                  alert(err instanceof Error ? err.message : "Gagal cetak label NiiMBot");
+                } finally {
+                  setNiimbotPrinting(false);
+                }
+              }}
+            >
+              {niimbotPrinting ? "Mencetak..." : "Cetak"}
+            </Button>
           </div>
         </div>
       </Modal>

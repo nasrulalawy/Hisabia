@@ -18,7 +18,7 @@ import {
   getReceiptPrinterType,
   getReceiptLocalUrl,
 } from "@/lib/receipt";
-import { printLabelNiimbot, buildNiimbotLabelLines } from "@/lib/niimbot";
+import { printLabelNiimbot } from "@/lib/niimbot";
 
 interface ProductUnitRow {
   id: string;
@@ -1207,11 +1207,10 @@ export function PosPage() {
                     setNiimbotLabelPrinting(true);
                     try {
                       const first = lastReceipt.items[0];
-                      const lines = buildNiimbotLabelLines({
+                      await printLabelNiimbot({
                         name: first.name,
                         price: first.price,
                       });
-                      await printLabelNiimbot(lines);
                     } catch (err) {
                       setNiimbotLabelError(err instanceof Error ? err.message : "Gagal cetak label NiiMBot");
                     } finally {

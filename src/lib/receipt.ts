@@ -221,20 +221,6 @@ const BLE_PRINTER_SERVICES = [
 
 const CHUNK_SIZE = 100;
 
-declare global {
-  interface Navigator {
-    bluetooth?: {
-      requestDevice(options: { filters: unknown[]; optionalServices: string[] }): Promise<{ gatt: { connect(): Promise<BluetoothGATTServer> } }>;
-    };
-  }
-}
-interface BluetoothGATTServer {
-  getPrimaryService(uuid: string): Promise<{
-    getCharacteristics(): Promise<{ properties: { writeWithoutResponse: boolean; write: boolean }; writeValueWithoutResponse(data: BufferSource): Promise<void>; writeValueWithResponse(data: BufferSource): Promise<void> }[]>;
-  }>;
-  disconnect(): void;
-}
-
 /** Cetak struk ke printer thermal Bluetooth via Web Bluetooth API. */
 export async function printReceiptBluetooth(data: ReceiptData): Promise<void> {
   if (!navigator.bluetooth) {

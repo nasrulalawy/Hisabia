@@ -141,6 +141,7 @@ export interface OrderItem {
   order_id: string;
   menu_item_id: string | null;
   product_id: string | null;
+  product_variant_id: string | null;
   unit_id: string | null;
   name: string;
   price: number;
@@ -201,6 +202,47 @@ export interface Product {
   stock: number;
   barcode: string | null;
   image_url: string | null;
+  is_available: boolean;
+  /** F&B: true = HPP dihitung dari ingredients (product_ingredients) */
+  use_ingredients_for_cost?: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** F&B: Bahan baku untuk resep. HPP produk = sum(ingredient.cost_per_unit * quantity). Punya stok dalam satuan unit_id. */
+export interface Ingredient {
+  id: string;
+  organization_id: string;
+  name: string;
+  unit_id: string;
+  cost_per_unit: number;
+  stock: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** F&B: Resep/BOM - jumlah bahan per produk. Quantity dalam satuan ingredient. */
+export interface ProductIngredient {
+  id: string;
+  product_id: string;
+  ingredient_id: string;
+  quantity: number;
+  created_at: string;
+}
+
+/** F&B: Variant produk (size, rasa, level gula, dll). selling_price/cost_price null = pakai dari product. */
+export interface ProductVariant {
+  id: string;
+  product_id: string;
+  name: string;
+  selling_price: number | null;
+  cost_price: number | null;
+  /** replace = harga jual menggantikan harga produk; addon = tambahan di atas harga dasar. Default replace. */
+  price_type?: "replace" | "addon";
+  /** Tampil sebagai opsi di cetak label (nama produk - variant, harga variant). */
+  show_on_label?: boolean;
+  sort_order: number;
   is_available: boolean;
   created_at: string;
   updated_at: string;

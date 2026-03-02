@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/Button";
@@ -11,12 +11,21 @@ import {
   type ReceiptPrinterType,
 } from "@/lib/receipt";
 import {
-  getNiimbotLabelFields,
-  setNiimbotLabelFields,
+  getNiimbotLabelDesign,
+  setNiimbotLabelDesign,
+  buildLabelCanvasFromDesign,
   NIIMBOT_LABEL_FIELD_OPTIONS,
   connectNiimbot,
   disconnectNiimbot,
   getNiimbotConnection,
+  nextLabelElementId,
+  LABEL_WIDTH_PX,
+  LABEL_HEIGHT_PX,
+  type LabelDesign,
+  type LabelElement,
+  type LabelElementField,
+  type LabelElementStaticText,
+  type LabelElementLine,
   type NiimbotLabelFieldId,
 } from "@/lib/niimbot";
 
@@ -31,10 +40,20 @@ export function TokoPage() {
   const [receiptPrinter, setReceiptPrinter] = useState<ReceiptPrinterType>("dialog");
 
   const [localPrintUrl, setLocalPrintUrl] = useState("http://localhost:3999");
-  const [niimbotLabelFields, setNiimbotLabelFieldsState] = useState<NiimbotLabelFieldId[]>([]);
+  const [labelDesign, setLabelDesignState] = useState<LabelDesign>(() => getNiimbotLabelDesign());
+  const [expandedElementId, setExpandedElementId] = useState<string | null>(null);
   const [niimbotConnected, setNiimbotConnected] = useState(false);
   const [niimbotConnecting, setNiimbotConnecting] = useState(false);
   const [niimbotConnError, setNiimbotConnError] = useState<string | null>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  const SAMPLE_PRODUCT = {
+    name: "Contoh Produk",
+    barcode: "1234567890123",
+    price: 25000,
+    sku: "SKU-001",
+    stock: 42,
+  };
 
   useEffect(() => {
     setNiimbotConnected(!!getNiimbotConnection());
@@ -43,8 +62,81 @@ export function TokoPage() {
   useEffect(() => {
     setReceiptPrinter(getReceiptPrinterType());
     setLocalPrintUrl(getReceiptLocalUrl());
-    setNiimbotLabelFieldsState(getNiimbotLabelFields());
+    setLabelDesignState(getNiimbotLabelDesign());
   }, []);
+
+  useEffect(() => {
+    const canvas = previewCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    canvas.width = LABEL_WIDTH_PX;
+    canvas.height = LABEL_HEIGHT_PX;
+    if (labelDesign.elements.length === 0) {
+      ctx.fillStyle = "white";
+      ctx.fillRect(0, 0, LABEL_WIDTH_PX, LABEL_HEIGHT_PX);
+      return;
+    }
+    const source = buildLabelCanvasFromDesign(labelDesign, SAMPLE_PRODUCT);
+    ctx.drawImage(source, 0, 0);
+  }, [labelDesign]);
+
+  function updateLabelDesign(design: LabelDesign) {
+    setLabelDesignState(design);
+    setNiimbotLabelDesign(design);
+  }
+
+  function moveElement(fromIndex: number, toIndex: number) {
+    const next = [...labelDesign.elements];
+    const [removed] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, removed);
+    updateLabelDesign({ elements: next });
+  }
+
+  function updateElement(index: number, patch: Partial<LabelElement>) {
+    const next = [...labelDesign.elements];
+    next[index] = { ...next[index], ...patch } as LabelElement;
+    updateLabelDesign({ elements: next });
+  }
+
+  function removeElement(index: number) {
+    const next = labelDesign.elements.filter((_, i) => i !== index);
+    updateLabelDesign({ elements: next });
+    if (labelDesign.elements[index]?.id === expandedElementId) setExpandedElementId(null);
+  }
+
+  function addElementField(fieldId: NiimbotLabelFieldId) {
+    const el: LabelElementField = {
+      id: nextLabelElementId(),
+      type: "field",
+      fieldId,
+      fontSize: 18,
+      fontBold: true,
+      align: "left",
+    };
+    updateLabelDesign({ elements: [...labelDesign.elements, el] });
+  }
+
+  function addElementStaticText() {
+    const el: LabelElementStaticText = {
+      id: nextLabelElementId(),
+      type: "static_text",
+      text: "Teks statis",
+      fontSize: 18,
+      fontBold: true,
+      align: "left",
+    };
+    updateLabelDesign({ elements: [...labelDesign.elements, el] });
+  }
+
+  function addElementLine() {
+    const el: LabelElementLine = {
+      id: nextLabelElementId(),
+      type: "line",
+      thickness: 2,
+    };
+    updateLabelDesign({ elements: [...labelDesign.elements, el] });
+  }
 
   function handleReceiptPrinterChange(value: ReceiptPrinterType) {
     setReceiptPrinter(value);
@@ -256,90 +348,189 @@ export function TokoPage() {
         {niimbotConnError && (
           <p className="text-sm text-red-600">{niimbotConnError}</p>
         )}
+
         <p className="text-sm text-[var(--muted-foreground)]">
-          Atur isi label yang dicetak ke printer NiiMBot (Bluetooth). Urutan field = urutan baris di label.
+          Desain label: atur elemen (field produk, teks statis, garis), urutan drag-and-drop, font &amp; ukuran.
         </p>
+
+        {/* Preview label */}
+        <div className="rounded-lg border border-[var(--border)] bg-white p-2">
+          <p className="mb-2 text-xs font-medium text-[var(--muted-foreground)]">Preview (contoh data)</p>
+          <canvas
+            ref={previewCanvasRef}
+            width={LABEL_WIDTH_PX}
+            height={LABEL_HEIGHT_PX}
+            className="max-h-32 w-full border border-[var(--border)] object-contain"
+            style={{ imageRendering: "pixelated" }}
+          />
+        </div>
+
+        {/* Daftar elemen - drag & drop */}
         <div>
           <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
-            Field yang ditampilkan (urutan dari atas ke bawah)
+            Elemen label (seret untuk mengubah urutan)
           </label>
           <ul className="space-y-2">
-            {niimbotLabelFields.map((fieldId, index) => {
-              const opt = NIIMBOT_LABEL_FIELD_OPTIONS.find((o) => o.id === fieldId);
-              return (
-                <li
-                  key={fieldId}
-                  className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--muted)]/30 px-3 py-2"
-                >
-                  <span className="flex-1 text-sm">{opt?.label ?? fieldId}</span>
-                  <div className="flex gap-1">
+            {labelDesign.elements.map((el, index) => (
+              <li
+                key={el.id}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData("text/plain", String(index));
+                  e.dataTransfer.effectAllowed = "move";
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const from = parseInt(e.dataTransfer.getData("text/plain"), 10);
+                  if (Number.isNaN(from) || from === index) return;
+                  moveElement(from, index);
+                }}
+                className="rounded-lg border border-[var(--border)] bg-[var(--muted)]/20"
+              >
+                <div className="flex items-center gap-2 px-3 py-2">
+                  <span className="cursor-grab text-[var(--muted-foreground)]" title="Seret untuk pindah">⋮⋮</span>
+                  <span className="flex-1 text-sm">
+                    {el.type === "field" && (NIIMBOT_LABEL_FIELD_OPTIONS.find((o) => o.id === el.fieldId)?.label ?? el.fieldId)}
+                    {el.type === "static_text" && `Teks: "${(el.text || "").slice(0, 20)}${(el.text || "").length > 20 ? "…" : ""}"`}
+                    {el.type === "line" && `Garis (${el.thickness ?? 2}px)`}
+                  </span>
+                  <div className="flex items-center gap-1">
                     <button
                       type="button"
                       disabled={index === 0}
-                      onClick={() => {
-                        const next = [...niimbotLabelFields];
-                        const t = next[index - 1];
-                        next[index - 1] = next[index];
-                        next[index] = t;
-                        setNiimbotLabelFieldsState(next);
-                        setNiimbotLabelFields(next);
-                      }}
+                      onClick={() => moveElement(index, index - 1)}
                       className="rounded border border-[var(--border)] px-2 py-1 text-xs disabled:opacity-50"
                     >
                       Naik
                     </button>
                     <button
                       type="button"
-                      disabled={index === niimbotLabelFields.length - 1}
-                      onClick={() => {
-                        const next = [...niimbotLabelFields];
-                        const t = next[index + 1];
-                        next[index + 1] = next[index];
-                        next[index] = t;
-                        setNiimbotLabelFieldsState(next);
-                        setNiimbotLabelFields(next);
-                      }}
+                      disabled={index === labelDesign.elements.length - 1}
+                      onClick={() => moveElement(index, index + 1)}
                       className="rounded border border-[var(--border)] px-2 py-1 text-xs disabled:opacity-50"
                     >
                       Turun
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        const next = niimbotLabelFields.filter((_, i) => i !== index);
-                        setNiimbotLabelFieldsState(next);
-                        setNiimbotLabelFields(next);
-                      }}
+                      onClick={() => setExpandedElementId(expandedElementId === el.id ? null : el.id)}
+                      className="rounded border border-[var(--border)] px-2 py-1 text-xs"
+                    >
+                      {expandedElementId === el.id ? "Tutup" : "Atur"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeElement(index)}
                       className="rounded border border-red-200 px-2 py-1 text-xs text-red-600"
                     >
                       Hapus
                     </button>
                   </div>
-                </li>
-              );
-            })}
+                </div>
+                {expandedElementId === el.id && (
+                  <div className="border-t border-[var(--border)] bg-[var(--muted)]/10 px-3 py-3">
+                    {(el.type === "field" || el.type === "static_text") && (
+                      <>
+                        <div className="mb-2 flex flex-wrap items-center gap-3">
+                          <label className="flex items-center gap-1 text-xs">
+                            Ukuran font
+                            <select
+                              value={el.fontSize ?? 18}
+                              onChange={(e) => updateElement(index, { fontSize: Number(e.target.value) })}
+                              className="rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1"
+                            >
+                              {[12, 14, 16, 18, 20, 24].map((n) => (
+                                <option key={n} value={n}>{n}px</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={el.fontBold ?? true}
+                              onChange={(e) => updateElement(index, { fontBold: e.target.checked })}
+                            />
+                            Tebal
+                          </label>
+                          <span className="text-xs">Rata:</span>
+                          {(["left", "center", "right"] as const).map((a) => (
+                            <button
+                              key={a}
+                              type="button"
+                              onClick={() => updateElement(index, { align: a })}
+                              className={`rounded border px-2 py-1 text-xs ${(el.align ?? "left") === a ? "border-[var(--primary)] bg-[var(--primary)]/10" : "border-[var(--border)]"}`}
+                            >
+                              {a === "left" ? "Kiri" : a === "center" ? "Tengah" : "Kanan"}
+                            </button>
+                          ))}
+                        </div>
+                        {el.type === "static_text" && (
+                          <Input
+                            value={el.text}
+                            onChange={(e) => updateElement(index, { text: e.target.value })}
+                            placeholder="Teks statis"
+                            className="text-sm"
+                          />
+                        )}
+                        {el.type === "field" && (
+                          <div className="flex flex-wrap gap-1">
+                            {NIIMBOT_LABEL_FIELD_OPTIONS.map((opt) => (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                onClick={() => updateElement(index, { fieldId: opt.id })}
+                                className={`rounded border px-2 py-1 text-xs ${el.fieldId === opt.id ? "border-[var(--primary)] bg-[var(--primary)]/10" : "border-[var(--border)]"}`}
+                              >
+                                {opt.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+                    {el.type === "line" && (
+                      <label className="flex items-center gap-2 text-xs">
+                        Ketebalan (px)
+                        <select
+                          value={el.thickness ?? 2}
+                          onChange={(e) => updateElement(index, { thickness: Number(e.target.value) })}
+                          className="rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1"
+                        >
+                          {[1, 2, 3, 4].map((n) => (
+                            <option key={n} value={n}>{n}</option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                  </div>
+                )}
+              </li>
+            ))}
           </ul>
-          {niimbotLabelFields.length === 0 && (
-            <p className="text-sm text-[var(--muted-foreground)]">Belum ada field. Tambah di bawah.</p>
+          {labelDesign.elements.length === 0 && (
+            <p className="text-sm text-[var(--muted-foreground)]">Belum ada elemen. Tambah di bawah.</p>
           )}
         </div>
+
+        {/* Tambah elemen */}
         <div>
-          <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Tambah field</label>
+          <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Tambah elemen</label>
           <div className="flex flex-wrap gap-2">
-            {NIIMBOT_LABEL_FIELD_OPTIONS.filter((o) => !niimbotLabelFields.includes(o.id)).map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                onClick={() => {
-                  const next = [...niimbotLabelFields, opt.id];
-                  setNiimbotLabelFieldsState(next);
-                  setNiimbotLabelFields(next);
-                }}
-                className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm hover:bg-[var(--muted)]"
-              >
+            {NIIMBOT_LABEL_FIELD_OPTIONS.map((opt) => (
+              <Button key={opt.id} type="button" variant="outline" size="sm" onClick={() => addElementField(opt.id)}>
                 + {opt.label}
-              </button>
+              </Button>
             ))}
+            <Button type="button" variant="outline" size="sm" onClick={addElementStaticText}>
+              + Teks statis
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={addElementLine}>
+              + Garis
+            </Button>
           </div>
         </div>
       </div>
