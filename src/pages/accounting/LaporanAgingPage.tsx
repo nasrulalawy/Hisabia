@@ -56,8 +56,8 @@ export function LaporanAgingPage() {
         supabase.from("receivables").select("id, amount, paid, due_date, notes, customers(name)").eq("organization_id", orgId),
         supabase.from("payables").select("id, amount, paid, due_date, notes, suppliers(name)").eq("organization_id", orgId),
       ]);
-      setReceivables((recRes.data as ReceivableRow[]) ?? []);
-      setPayables((payRes.data as PayableRow[]) ?? []);
+      setReceivables((recRes.data as unknown as ReceivableRow[]) ?? []);
+      setPayables((payRes.data as unknown as PayableRow[]) ?? []);
       setLoading(false);
     })();
   }, [orgId]);

@@ -819,7 +819,7 @@ export function PosPage() {
     if (options?.printAfter) {
       const printerType = getReceiptPrinterType();
       try {
-        if (printerType === "bluetooth" && navigator.bluetooth) {
+        if (printerType === "bluetooth" && "bluetooth" in navigator && navigator.bluetooth) {
           await printReceiptBluetooth(receiptData);
         } else if (printerType === "local") {
           await printReceiptLocal(receiptData, getReceiptLocalUrl());
@@ -1149,7 +1149,7 @@ export function PosPage() {
                   variant="outline"
                   size="sm"
                   className="flex-1 min-w-0"
-                  disabled={bluetoothPrinting || !navigator.bluetooth}
+                  disabled={bluetoothPrinting || !("bluetooth" in navigator && navigator.bluetooth)}
                   onClick={async () => {
                     if (!lastReceipt) return;
                     setBluetoothPrintError(null);
@@ -1481,7 +1481,7 @@ export function PosPage() {
           <div className="flex gap-2">
             <Button
               className="flex-1"
-              onClick={checkout}
+              onClick={() => checkout()}
               disabled={
                 checkoutLoading ||
                 (paymentMethod === "cash" &&

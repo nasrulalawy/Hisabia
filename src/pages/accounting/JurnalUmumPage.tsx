@@ -122,7 +122,7 @@ export function JurnalUmumPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!orgId) return;
-    const { balanced, debit, credit } = getTotals();
+    const { balanced, debit } = getTotals();
     if (!balanced || debit <= 0) {
       setError("Total debit harus sama dengan total kredit dan lebih dari 0.");
       return;

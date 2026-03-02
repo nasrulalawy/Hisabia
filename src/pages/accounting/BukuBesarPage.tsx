@@ -80,7 +80,8 @@ export function BukuBesarPage() {
         .in("journal_entry_id", ids);
       const account = accounts.find((a) => a.id === selectedAccountId);
       const normalDebit = account ? ["asset", "expense"].includes(account.account_type) : true;
-      const list = (lines ?? []) as { debit: number; credit: number; journal_entries: { entry_date: string; number: string | null; description: string | null } | null }[];
+      type LineRow = { debit: number; credit: number; journal_entries: { entry_date: string; number: string | null; description: string | null } | null };
+      const list = ((lines ?? []) as unknown) as LineRow[];
       list.sort((a, b) => (a.journal_entries?.entry_date ?? "").localeCompare(b.journal_entries?.entry_date ?? ""));
       let running = 0;
       const result: LedgerRow[] = list.map((l) => {

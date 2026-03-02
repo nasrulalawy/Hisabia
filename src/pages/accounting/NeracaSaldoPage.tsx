@@ -75,7 +75,7 @@ export function NeracaSaldoPage() {
         const t = byAccount[a.id] ?? { debit: 0, credit: 0 };
         let debit = 0,
           credit = 0;
-        if (normalDebit[a.account_type]) {
+        if (normalDebit[a.account_type as AccountType]) {
           const bal = t.debit - t.credit;
           if (bal >= 0) debit = bal;
           else credit = -bal;

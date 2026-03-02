@@ -221,6 +221,20 @@ const BLE_PRINTER_SERVICES = [
 
 const CHUNK_SIZE = 100;
 
+declare global {
+  interface Navigator {
+    bluetooth?: {
+      requestDevice(options: { filters: unknown[]; optionalServices: string[] }): Promise<{ gatt: { connect(): Promise<BluetoothGATTServer> } }>;
+    };
+  }
+}
+interface BluetoothGATTServer {
+  getPrimaryService(uuid: string): Promise<{
+    getCharacteristics(): Promise<{ properties: { writeWithoutResponse: boolean; write: boolean }; writeValueWithoutResponse(data: BufferSource): Promise<void>; writeValueWithResponse(data: BufferSource): Promise<void> }[]>;
+  }>;
+  disconnect(): void;
+}
+
 /** Cetak struk ke printer thermal Bluetooth via Web Bluetooth API. */
 export async function printReceiptBluetooth(data: ReceiptData): Promise<void> {
   if (!navigator.bluetooth) {
@@ -232,13 +246,14 @@ export async function printReceiptBluetooth(data: ReceiptData): Promise<void> {
     optionalServices: BLE_PRINTER_SERVICES,
   });
   const server = await device.gatt!.connect();
-  let characteristic: BluetoothRemoteGATTCharacteristic | null = null;
+  type Char = { properties: { writeWithoutResponse: boolean; write: boolean }; writeValueWithoutResponse(data: BufferSource): Promise<void>; writeValueWithResponse(data: BufferSource): Promise<void> };
+  let characteristic: Char | null = null;
   for (const uuid of BLE_PRINTER_SERVICES) {
     try {
       const service = await server.getPrimaryService(uuid);
       const chars = await service.getCharacteristics();
       const writable = chars.find(
-        (c) => c.properties.writeWithoutResponse || c.properties.write
+        (c: Char) => c.properties.writeWithoutResponse || c.properties.write
       );
       if (writable) {
         characteristic = writable;
