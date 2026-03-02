@@ -93,7 +93,7 @@ export interface NiimbotConnection {
 /** Koneksi yang sudah di-cache (hubungkan sekali di Pengaturan, dipakai untuk cetak di POS/dll). */
 let cachedConnection: {
   conn: NiimbotConnection;
-  server: BluetoothRemoteGATTServer;
+  server: { connected: boolean };
 } | null = null;
 
 /** Mengembalikan koneksi NiiMBot yang aktif (jika sudah dihubungkan dari Pengaturan). */
@@ -153,7 +153,8 @@ export async function connectNiimbot(): Promise<NiimbotConnection> {
       server.disconnect();
     },
   };
-  cachedConnection = { conn, server };
+  // BluetoothGATTServer has .connected at runtime; TS lib may not declare it
+  cachedConnection = { conn, server: server as unknown as { connected: boolean } };
   return conn;
 }
 
