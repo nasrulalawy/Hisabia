@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
-import { formatIdr, formatDate } from "@/lib/utils";
+import { formatIdr } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
+import { Button } from "@/components/ui/Button";
+import { downloadCsv, printForPdf } from "@/lib/export";
 import type { AccountType } from "@/lib/database.types";
 
 interface Row {
@@ -91,6 +93,12 @@ export function NeracaSaldoPage() {
     })();
   }, [orgId, asOfDate]);
 
+  function exportCsv() {
+    const out: string[][] = [["Kode", "Nama Akun", "Tipe", "Debit", "Kredit"]];
+    rows.forEach((r) => out.push([r.code, r.name, r.account_type, String(r.debit), String(r.credit)]));
+    downloadCsv(out, `neraca-saldo-${asOfDate}.csv`);
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end gap-4">
@@ -101,6 +109,10 @@ export function NeracaSaldoPage() {
         <div>
           <label className="mb-1 block text-sm font-medium">Per tanggal</label>
           <Input type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} />
+        </div>
+        <div className="flex gap-2 ml-auto">
+          <Button variant="outline" size="sm" onClick={exportCsv} disabled={rows.length === 0}>Export CSV</Button>
+          <Button variant="outline" size="sm" onClick={printForPdf}>Cetak</Button>
         </div>
       </div>
       {loading ? (

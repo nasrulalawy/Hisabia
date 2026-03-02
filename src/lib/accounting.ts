@@ -86,12 +86,21 @@ export async function postJournalEntry(params: PostJournalEntryParams): Promise<
   const validLines = lines.filter((l) => (Number(l.debit) || 0) > 0 || (Number(l.credit) || 0) > 0);
   if (validLines.length === 0) return null;
 
+  let journalNumber = number?.trim() || null;
+  if (!journalNumber) {
+    const { data: nextNum } = await supabase.rpc("get_next_journal_number", {
+      p_org_id: organization_id,
+      p_entry_date: entry_date.slice(0, 10),
+    });
+    journalNumber = (nextNum as string) || null;
+  }
+
   const { data: entry, error: entryErr } = await supabase
     .from("journal_entries")
     .insert({
       organization_id,
       entry_date: entry_date.slice(0, 10),
-      number: number?.trim() || null,
+      number: journalNumber,
       description: description.trim() || null,
       reference_type: reference_type || null,
       reference_id: reference_id || null,

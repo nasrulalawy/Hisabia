@@ -3,6 +3,8 @@ import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
 import { formatIdr, formatDate } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
+import { Button } from "@/components/ui/Button";
+import { downloadCsv, printForPdf } from "@/lib/export";
 
 interface AccountBalance {
   id: string;
@@ -91,6 +93,18 @@ export function LabaRugiPage() {
         <div>
           <label className="mb-1 block text-sm font-medium">Sampai</label>
           <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => {
+            const out: string[][] = [["Tipe", "Kode", "Nama", "Jumlah"]];
+            revenue.forEach((a) => out.push(["Pendapatan", a.code, a.name, String(a.balance)]));
+            out.push(["", "", "Total Pendapatan", String(totalRevenue)]);
+            expense.forEach((a) => out.push(["Beban", a.code, a.name, String(a.balance)]));
+            out.push(["", "", "Total Beban", String(totalExpense)]);
+            out.push(["", "", "Laba (Rugi) Bersih", String(netIncome)]);
+            downloadCsv(out, `laba-rugi-${startDate}-${endDate}.csv`);
+          }} disabled={accounts.length === 0}>Export CSV</Button>
+          <Button variant="outline" size="sm" onClick={printForPdf}>Cetak</Button>
         </div>
       </div>
       {loading ? (

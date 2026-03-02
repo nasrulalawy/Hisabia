@@ -31,6 +31,9 @@ import { BukuBesarPage } from "@/pages/accounting/BukuBesarPage";
 import { NeracaPage } from "@/pages/accounting/NeracaPage";
 import { LabaRugiPage } from "@/pages/accounting/LabaRugiPage";
 import { NeracaSaldoPage } from "@/pages/accounting/NeracaSaldoPage";
+import { TutupBukuPage } from "@/pages/accounting/TutupBukuPage";
+import { LaporanAgingPage } from "@/pages/accounting/LaporanAgingPage";
+import { DashboardKeuanganPage } from "@/pages/accounting/DashboardKeuanganPage";
 import { SubscriptionPage } from "@/pages/subscription/SubscriptionPage";
 import { PaymentSuccessPage } from "@/pages/subscription/PaymentSuccessPage";
 import { ShopPage } from "@/pages/shop/ShopPage";
@@ -161,6 +164,9 @@ export default function App() {
           <Route path="buku-besar" element={<BukuBesarPage />} />
           <Route path="neraca" element={<NeracaPage />} />
           <Route path="laba-rugi" element={<LabaRugiPage />} />
+          <Route path="tutup-buku" element={<TutupBukuPage />} />
+          <Route path="umur-piutang-hutang" element={<LaporanAgingPage />} />
+          <Route path="dashboard-keuangan" element={<DashboardKeuanganPage />} />
           <Route path="accounting" element={<LaporanPage />} />
           <Route path="pembelian" element={<PembelianPage />} />
           <Route path="stok" element={<StokPage />} />

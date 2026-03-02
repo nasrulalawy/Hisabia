@@ -3,6 +3,8 @@ import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
 import { formatIdr, formatDate } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
+import { Button } from "@/components/ui/Button";
+import { downloadCsv, printForPdf } from "@/lib/export";
 import type { ChartOfAccount } from "@/lib/database.types";
 
 interface LedgerRow {
@@ -135,6 +137,14 @@ export function BukuBesarPage() {
         <div>
           <label className="mb-1 block text-sm font-medium">Sampai</label>
           <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => {
+            const out: string[][] = [["Tanggal", "No. Jurnal", "Keterangan", "Debit", "Kredit", "Saldo"]];
+            rows.forEach((r) => out.push([r.entry_date, r.number || "", r.description || "", String(r.debit), String(r.credit), String(r.balance)]));
+            downloadCsv(out, `buku-besar-${selectedAccount?.code ?? "akun"}-${startDate}-${endDate}.csv`);
+          }} disabled={rows.length === 0}>Export CSV</Button>
+          <Button variant="outline" size="sm" onClick={printForPdf}>Cetak</Button>
         </div>
       </div>
       {selectedAccount && (

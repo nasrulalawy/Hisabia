@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { backfillAccounting, type BackfillResult } from "@/lib/accounting";
+import { downloadCsv, printForPdf } from "@/lib/export";
 import type { ChartOfAccount, JournalEntry, JournalEntryLine } from "@/lib/database.types";
 
 interface EntryWithLines extends JournalEntry {
@@ -134,12 +135,20 @@ export function JurnalUmumPage() {
     setSaving(true);
     setError(null);
     const { data: { user } } = await supabase.auth.getUser();
+    let journalNumber = formNumber.trim() || null;
+    if (!journalNumber) {
+      const { data: nextNum } = await supabase.rpc("get_next_journal_number", {
+        p_org_id: orgId,
+        p_entry_date: formDate,
+      });
+      journalNumber = (nextNum as string) || null;
+    }
     const { data: entry, error: insertErr } = await supabase
       .from("journal_entries")
       .insert({
         organization_id: orgId,
         entry_date: formDate,
-        number: formNumber.trim() || null,
+        number: journalNumber,
         description: formDesc.trim() || null,
         created_by: user?.id,
       })
@@ -171,6 +180,24 @@ export function JurnalUmumPage() {
 
   const { debit, credit, balanced } = getTotals();
 
+  function exportCsv() {
+    const rows: string[][] = [["Tanggal", "No", "Keterangan", "Akun", "Debit", "Kredit"]];
+    entries.forEach((entry) => {
+      const lines = entry.journal_entry_lines ?? [];
+      lines.forEach((line, i) => {
+        rows.push([
+          i === 0 ? formatDate(entry.entry_date) : "",
+          i === 0 ? (entry.number || "") : "",
+          i === 0 ? (entry.description || "") : "",
+          line.chart_of_accounts ? `${line.chart_of_accounts.code} — ${line.chart_of_accounts.name}` : "",
+          String(Number(line.debit) || 0),
+          String(Number(line.credit) || 0),
+        ]);
+      });
+    });
+    downloadCsv(rows, `jurnal-umum-${new Date().toISOString().slice(0, 10)}.csv`);
+  }
+
   async function handleSyncOldTransactions() {
     if (!orgId) return;
     setSyncLoading(true);
@@ -191,7 +218,15 @@ export function JurnalUmumPage() {
           <h2 className="text-2xl font-semibold text-[var(--foreground)]">Jurnal Umum</h2>
           <p className="text-[var(--muted-foreground)]">Catat transaksi akuntansi (debit = kredit).</p>
         </div>
-        <Button onClick={openAdd}>Tambah Jurnal</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={exportCsv} disabled={entries.length === 0}>
+            Export CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={printForPdf}>
+            Cetak
+          </Button>
+          <Button onClick={openAdd}>Tambah Jurnal</Button>
+        </div>
       </div>
 
       <div className="rounded-lg border border-[var(--border)] bg-[var(--muted)]/30 p-4">

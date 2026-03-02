@@ -3,6 +3,8 @@ import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
 import { formatIdr, formatDate } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
+import { Button } from "@/components/ui/Button";
+import { downloadCsv, printForPdf } from "@/lib/export";
 
 type AccountType = "asset" | "liability" | "equity" | "revenue" | "expense";
 
@@ -98,6 +100,17 @@ export function NeracaPage() {
         <div>
           <label className="mb-1 block text-sm font-medium">Per tanggal</label>
           <Input type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} />
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => {
+            const out: string[][] = [["Jenis", "Kode", "Nama", "Saldo"]];
+            assets.forEach((a) => out.push(["Aset", a.code, a.name, String(a.balance)]));
+            liabilities.forEach((a) => out.push(["Kewajiban", a.code, a.name, String(a.balance)]));
+            equity.forEach((a) => out.push(["Ekuitas", a.code, a.name, String(a.balance)]));
+            if (Math.abs(labaPeriodeBerjalan) >= 0.01) out.push(["Ekuitas", "-", "Laba (rugi) periode berjalan", String(labaPeriodeBerjalan)]);
+            downloadCsv(out, `neraca-${asOfDate}.csv`);
+          }} disabled={accounts.length === 0}>Export CSV</Button>
+          <Button variant="outline" size="sm" onClick={printForPdf}>Cetak</Button>
         </div>
       </div>
       {loading ? (
