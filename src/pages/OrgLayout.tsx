@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import { OrgProvider } from "@/contexts/OrgContext";
+import { normalizeOutletPermissions } from "@/lib/outletFeatures";
 import type { Outlet as OutletType } from "@/lib/database.types";
 
 const OUTLET_COOKIE = "hisabia-current-outlet";
@@ -29,6 +30,7 @@ export function OrgLayout() {
   const [role, setRole] = useState<string>("member");
   const [outlets, setOutlets] = useState<OutletType[] | null>(null);
   const [currentOutletId, setCurrentOutletId] = useState<string | null>(null);
+  const [outletFeaturePermissions, setOutletFeaturePermissions] = useState<Record<string, { can_create: boolean; can_read: boolean; can_update: boolean; can_delete: boolean }> | null>(null);
   const [loading, setLoading] = useState(true);
   const [trialExpired, setTrialExpired] = useState(false);
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
@@ -101,6 +103,27 @@ export function OrgLayout() {
     run();
   }, [orgId, navigate]);
 
+  // Load outlet feature permissions when current outlet changes
+  useEffect(() => {
+    if (!currentOutletId) {
+      setOutletFeaturePermissions(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("outlet_feature_permissions")
+        .select("feature_key, can_create, can_read, can_update, can_delete")
+        .eq("outlet_id", currentOutletId);
+      if (!cancelled && data) {
+        setOutletFeaturePermissions(normalizeOutletPermissions(data));
+      } else if (!cancelled) {
+        setOutletFeaturePermissions({});
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [currentOutletId]);
+
   if (loading || !orgId) {
     return (
       <div className="flex h-screen items-center justify-center bg-[var(--muted)]">
@@ -124,6 +147,7 @@ export function OrgLayout() {
         currentOutletId,
         currentOutlet,
         currentOutletType,
+        outletFeaturePermissions,
       }}
     >
       <div className="flex h-screen overflow-hidden bg-[var(--muted)]">

@@ -1,6 +1,8 @@
 import { Link, useLocation } from "react-router-dom";
 import { useState, useEffect } from "react";
 import type { OutletType } from "@/lib/database.types";
+import { useOrg } from "@/contexts/OrgContext";
+import { canReadFeature, type OutletFeaturePermission } from "@/lib/outletFeatures";
 
 const SIDEBAR_EXPANDED_KEY = "hisabia-sidebar-expanded";
 
@@ -75,12 +77,18 @@ const allNavGroups: NavGroup[] = [
   },
 ];
 
-function getNavGroupsForOutletType(outletType: OutletType): NavGroup[] {
+function getNavGroupsForOutletType(
+  outletType: OutletType,
+  permissions: Record<string, OutletFeaturePermission> | null
+): NavGroup[] {
   return allNavGroups
     .filter((g) => !g.outletTypes || g.outletTypes.includes(outletType))
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => !item.outletTypes || item.outletTypes.includes(outletType)),
+      items: group.items.filter((item) => {
+        if (item.outletTypes && !item.outletTypes.includes(outletType)) return false;
+        return canReadFeature(item.href, permissions);
+      }),
     }))
     .filter((g) => g.items.length > 0);
 }
@@ -106,8 +114,9 @@ export function Sidebar({
 }) {
   const location = useLocation();
   const pathname = location.pathname;
+  const { outletFeaturePermissions } = useOrg();
   const [expanded, setExpanded] = useState(true);
-  const navGroups = getNavGroupsForOutletType(outletType);
+  const navGroups = getNavGroupsForOutletType(outletType, outletFeaturePermissions ?? null);
 
   useEffect(() => {
     const stored = localStorage.getItem(SIDEBAR_EXPANDED_KEY);

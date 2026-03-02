@@ -91,20 +91,20 @@ export async function connectNiimbot(): Promise<NiimbotConnection> {
     throw new Error("Browser tidak mendukung Bluetooth. Gunakan Chrome/Edge dan pastikan HTTPS.");
   }
   const device = await navigator.bluetooth.requestDevice({
-    acceptAllDevices: true,
+    filters: [{ namePrefix: "NiiMBot" }, { namePrefix: "NiiM" }],
     optionalServices: [NIIMBOT_SERVICE_UUID],
   });
   const server = await device.gatt!.connect();
   const service = await server.getPrimaryService(NIIMBOT_SERVICE_UUID);
   const chars = await service.getCharacteristics();
-  const char = chars.find((c) => c.uuid === NIIMBOT_CHAR_UUID);
+  const char = chars.find((c) => (c as { uuid?: string }).uuid === NIIMBOT_CHAR_UUID) ?? chars[0];
   if (!char) {
     server.disconnect();
     throw new Error("Karakteristik NiiMBot tidak ditemukan.");
   }
   const write = char.properties.writeWithoutResponse
-    ? (data: Uint8Array) => char.writeValueWithoutResponse(data)
-    : (data: Uint8Array) => char.writeValueWithResponse(data);
+    ? (data: Uint8Array) => char.writeValueWithoutResponse(data as BufferSource)
+    : (data: Uint8Array) => char.writeValueWithResponse(data as BufferSource);
 
   return {
     async write(data: Uint8Array) {

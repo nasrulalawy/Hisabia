@@ -1,5 +1,6 @@
 import { createContext, useContext, type ReactNode } from "react";
 import type { Outlet, OutletType } from "@/lib/database.types";
+import type { OutletFeaturePermission } from "@/lib/outletFeatures";
 
 interface OrgContextValue {
   orgId: string;
@@ -7,6 +8,8 @@ interface OrgContextValue {
   currentOutletId: string | null;
   currentOutlet: Outlet | null;
   currentOutletType: OutletType;
+  /** Permission per fitur untuk outlet aktif. Null = belum load. Kosong/tidak ada key = semua diizinkan. */
+  outletFeaturePermissions: Record<string, OutletFeaturePermission> | null;
 }
 
 const OrgContext = createContext<OrgContextValue | null>(null);
