@@ -213,7 +213,7 @@ export function printReceiptInWindow(data: ReceiptData): void {
   w.document.close();
 }
 
-const BLE_PRINTER_SERVICES = [
+export const BLE_PRINTER_SERVICES = [
   "0000ff00-0000-1000-8000-00805f9b34fb",
   "0000fff0-0000-1000-8000-00805f9b34fb",
   "e7810a71-73ae-499d-8c15-faa9aef0c3f2", // Nordic UART
@@ -221,26 +221,54 @@ const BLE_PRINTER_SERVICES = [
 
 const CHUNK_SIZE = 100;
 
-/** Cetak struk ke printer thermal Bluetooth via Web Bluetooth API. */
-export async function printReceiptBluetooth(data: ReceiptData): Promise<void> {
+type WritableCharacteristic = {
+  properties: { writeWithoutResponse: boolean; write: boolean };
+  writeValueWithoutResponse(data: BufferSource): Promise<void>;
+  writeValueWithResponse(data: BufferSource): Promise<void>;
+};
+
+/** Koneksi BLE printer struk yang dihubungkan sekali di Pengaturan Toko. */
+let receiptBleCache: {
+  server: BluetoothRemoteGATTServer;
+  characteristic: WritableCharacteristic;
+} | null = null;
+
+function clearReceiptBleCache() {
+  receiptBleCache = null;
+}
+
+/** Cek apakah printer struk BLE sudah terhubung (dari Pengaturan). */
+export function getReceiptBluetoothConnection(): boolean {
+  if (!receiptBleCache?.server?.connected) return false;
+  return true;
+}
+
+/**
+ * Hubungkan printer struk thermal BLE (dipanggil dari Pengaturan Toko).
+ * Pilih device dari dialog, lalu koneksi disimpan untuk cetak dari POS.
+ */
+export async function connectReceiptBluetooth(): Promise<void> {
   if (!navigator.bluetooth) {
     throw new Error("Browser tidak mendukung Bluetooth. Gunakan Chrome/Edge dan pastikan HTTPS.");
   }
-  const bytes = buildEscPosBytes(data);
+  if (receiptBleCache?.server?.connected) return;
+
   const device = await navigator.bluetooth.requestDevice({
     filters: [],
     optionalServices: BLE_PRINTER_SERVICES,
   });
+  device.addEventListener("gattserverdisconnected", () => clearReceiptBleCache());
+
   const server = await device.gatt!.connect();
-  type Char = { properties: { writeWithoutResponse: boolean; write: boolean }; writeValueWithoutResponse(data: BufferSource): Promise<void>; writeValueWithResponse(data: BufferSource): Promise<void> };
-  let characteristic: Char | null = null;
+  let characteristic: WritableCharacteristic | null = null;
   for (const uuid of BLE_PRINTER_SERVICES) {
     try {
       const service = await server.getPrimaryService(uuid);
       const chars = await service.getCharacteristics();
       const writable = chars.find(
-        (c: Char) => c.properties.writeWithoutResponse || c.properties.write
-      );
+        (c: BluetoothRemoteGATTCharacteristic) =>
+          c.properties.writeWithoutResponse || c.properties.write
+      ) as WritableCharacteristic | undefined;
       if (writable) {
         characteristic = writable;
         break;
@@ -253,6 +281,29 @@ export async function printReceiptBluetooth(data: ReceiptData): Promise<void> {
     server.disconnect();
     throw new Error("Tidak menemukan karakteristik tulis pada printer.");
   }
+  receiptBleCache = { server, characteristic };
+}
+
+/** Putus koneksi printer struk BLE dan hapus cache. */
+export function disconnectReceiptBluetooth(): void {
+  if (receiptBleCache?.server?.connected) {
+    receiptBleCache.server.disconnect();
+  }
+  clearReceiptBleCache();
+}
+
+/** Cetak struk ke printer thermal Bluetooth. Gunakan koneksi yang sudah dihubungkan di Pengaturan Toko. */
+export async function printReceiptBluetooth(data: ReceiptData): Promise<void> {
+  if (!navigator.bluetooth) {
+    throw new Error("Browser tidak mendukung Bluetooth. Gunakan Chrome/Edge dan pastikan HTTPS.");
+  }
+  if (!receiptBleCache?.server?.connected || !receiptBleCache.characteristic) {
+    throw new Error(
+      "Printer struk thermal belum terhubung. Buka Pengaturan Toko → Printer struk thermal (BLE) → Hubungkan perangkat."
+    );
+  }
+  const bytes = buildEscPosBytes(data);
+  const characteristic = receiptBleCache.characteristic;
   for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
     const chunk = bytes.slice(i, i + CHUNK_SIZE);
     if (characteristic.properties.writeWithoutResponse) {
@@ -261,7 +312,6 @@ export async function printReceiptBluetooth(data: ReceiptData): Promise<void> {
       await characteristic.writeValueWithResponse(chunk);
     }
   }
-  server.disconnect();
 }
 
 /** Kirim data struk ke app lokal (localhost) untuk cetak direct tanpa dialog. */

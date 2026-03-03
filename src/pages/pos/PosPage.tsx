@@ -6,6 +6,7 @@ import { postJournalEntry } from "@/lib/accounting";
 import { notifyN8n } from "@/lib/apiServer";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { CurrencyInput } from "@/components/ui/CurrencyInput";
 import { Modal } from "@/components/ui/Modal";
 import { Badge } from "@/components/ui/Badge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -54,6 +55,16 @@ interface ProductMeta {
   prices: ProductPriceRow[];
 }
 
+interface ProductVariantRow {
+  id: string;
+  product_id: string;
+  name: string;
+  selling_price: number | null;
+  price_type: "replace" | "addon";
+  is_available: boolean;
+  sort_order: number;
+}
+
 interface CartItem {
   productId: string;
   unitId: string;
@@ -62,6 +73,16 @@ interface CartItem {
   name: string;
   price: number;
   qty: number;
+  /** Variant ganti full (pilih satu saja) */
+  replaceVariantId?: string | null;
+  replaceVariantName?: string | null;
+  /** Add-on (bisa banyak, harga ditambah) */
+  addonVariantIds?: string[];
+  addonVariantNames?: string[];
+  /** @deprecated pakai replaceVariantId; dipakai untuk order_items.product_variant_id */
+  productVariantId?: string | null;
+  /** @deprecated pakai replaceVariantName + addonVariantNames untuk tampilan */
+  variantName?: string | null;
 }
 
 const PRICE_TYPES = [
@@ -106,9 +127,14 @@ export function PosPage() {
     product: ProductWithCategory;
     qty: number;
     selectedUnit: ProductUnitRow | null;
+    /** Variant ganti full — hanya satu yang bisa dipilih */
+    selectedReplaceVariant: ProductVariantRow | null;
+    /** Add-on — bisa multi pick */
+    selectedAddonVariants: ProductVariantRow[];
     priceType: "retail" | "grosir" | "grosir_besar";
     editCartKey?: string;
   } | null>(null);
+  const [productVariants, setProductVariants] = useState<Record<string, ProductVariantRow[]>>({});
   const [scanModalOpen, setScanModalOpen] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
@@ -188,7 +214,7 @@ export function PosPage() {
       if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
         if (selectedCartIndex !== null && cart[selectedCartIndex]) {
-          removeCartItem(cart[selectedCartIndex].productId, cart[selectedCartIndex].unitId);
+          removeCartItem(cart[selectedCartIndex]);
           const newLen = cart.length - 1;
           setSelectedCartIndex(newLen === 0 ? null : Math.min(selectedCartIndex, newLen - 1));
         }
@@ -286,9 +312,10 @@ export function PosPage() {
 
         const ids = prodsList.map((p) => p.id);
         let meta: Record<string, ProductMeta> = {};
+        let variantsByProduct: Record<string, ProductVariantRow[]> = {};
         if (ids.length > 0) {
           try {
-            const [puRes, ppRes] = await Promise.all([
+            const [puRes, ppRes, pvRes] = await Promise.all([
               supabase
                 .from("product_units")
                 .select("id, product_id, unit_id, conversion_to_base, is_base, units(name, symbol)")
@@ -297,20 +324,32 @@ export function PosPage() {
                 .from("product_prices")
                 .select("id, product_id, unit_id, customer_id, price, price_type, units(name, symbol)")
                 .in("product_id", ids),
+              supabase
+                .from("product_variants")
+                .select("id, product_id, name, selling_price, price_type, is_available, sort_order")
+                .in("product_id", ids)
+                .eq("is_available", true)
+                .order("sort_order"),
             ]);
             const puData = (puRes.data as unknown as (ProductUnitRow & { product_id: string })[]) ?? [];
             const ppData = (ppRes.data as unknown as (ProductPriceRow & { product_id: string })[]) ?? [];
+            const pvData = (pvRes.data as unknown as (ProductVariantRow & { product_id: string })[]) ?? [];
             for (const id of ids) {
               meta[id] = {
                 units: puData.filter((r) => r.product_id === id),
                 prices: ppData.filter((r) => r.product_id === id),
               };
+              variantsByProduct[id] = (pvData.filter((r) => r.product_id === id) as ProductVariantRow[]).map((v) => ({
+                ...v,
+                price_type: (v.price_type ?? "replace") as "replace" | "addon",
+              }));
             }
           } catch {
             meta = {};
           }
         }
         setProductMeta(meta);
+        setProductVariants(variantsByProduct);
       }
 
       const { data: cats } = await supabase
@@ -368,40 +407,72 @@ export function PosPage() {
     return matchCat && matchSearch && p.is_available;
   });
 
+  /** Harga dasar: replace (ganti full) + sum(addon). Tanpa variant = harga produk. */
+  function getBaseSellingWithVariants(
+    product: ProductWithCategory,
+    replaceVariant: ProductVariantRow | null | undefined,
+    addonVariants: ProductVariantRow[]
+  ): number {
+    const baseProduct = Number(product.selling_price ?? 0);
+    const base = replaceVariant
+      ? Number(replaceVariant.selling_price ?? 0)
+      : baseProduct;
+    const addonSum = addonVariants.reduce(
+      (sum, v) => sum + Number(v.selling_price ?? 0),
+      0
+    );
+    return base + addonSum;
+  }
+
   function resolvePrice(
     product: ProductWithCategory,
     unitId: string,
-    usePriceType?: "retail" | "grosir" | "grosir_besar"
+    usePriceType?: "retail" | "grosir" | "grosir_besar",
+    replaceVariant?: ProductVariantRow | null,
+    addonVariants?: ProductVariantRow[]
   ): number | null {
     const meta = productMeta[product.id];
     const prices = meta?.prices ?? [];
     const pt = usePriceType ?? priceType;
-    // 1. Harga khusus pelanggan
-    if (selectedCustomerId) {
+    const hasVariant = replaceVariant || (addonVariants?.length ?? 0) > 0;
+    const effectiveSelling = getBaseSellingWithVariants(
+      product,
+      replaceVariant,
+      addonVariants ?? []
+    );
+    // 1. Harga khusus pelanggan (tanpa variant)
+    if (selectedCustomerId && !hasVariant) {
       const custPrice = prices.find(
         (pr) => pr.unit_id === unitId && pr.customer_id === selectedCustomerId
       );
       if (custPrice) return custPrice.price;
     }
-    // 2. Harga umum per satuan
-    const unitPrice = prices.find(
-      (pr) => pr.unit_id === unitId && !pr.customer_id && pr.price_type === pt
-    );
-    if (unitPrice) return unitPrice.price;
-    // 3. Fallback: harga retail umum
-    const retailPrice = prices.find(
-      (pr) => pr.unit_id === unitId && !pr.customer_id && pr.price_type === "retail"
-    );
-    if (retailPrice) return retailPrice.price;
-    // 4. Fallback: selling_price (untuk satuan dasar)
+    // 2. Harga umum per satuan (tanpa variant)
+    if (!hasVariant) {
+      const unitPrice = prices.find(
+        (pr) => pr.unit_id === unitId && !pr.customer_id && pr.price_type === pt
+      );
+      if (unitPrice) return unitPrice.price;
+      const retailPrice = prices.find(
+        (pr) => pr.unit_id === unitId && !pr.customer_id && pr.price_type === "retail"
+      );
+      if (retailPrice) return retailPrice.price;
+    }
+    // 3. Fallback: effective selling (dasar) atau dikalikan konversi satuan
     const metaUnits = meta?.units ?? [];
     const unitRow = metaUnits.find((u) => u.unit_id === unitId);
-    if (unitRow?.is_base) return Number(product.selling_price);
-    // 5. selling_price * conversion (jika satuan turunan)
-    if (unitRow) {
-      return Number(product.selling_price) * unitRow.conversion_to_base;
-    }
-    return Number(product.selling_price);
+    if (unitRow?.is_base) return effectiveSelling;
+    if (unitRow) return effectiveSelling * unitRow.conversion_to_base;
+    return effectiveSelling;
+  }
+
+  function cartItemDisplayName(c: CartItem): string {
+    const replace = c.replaceVariantName ?? c.variantName;
+    const addons = c.addonVariantNames?.length ? c.addonVariantNames : [];
+    let name = c.name;
+    if (replace) name += ` - ${replace}`;
+    if (addons.length) name += ` + ${addons.join(", ")}`;
+    return name;
   }
 
   function getUnitsForProduct(product: ProductWithCategory): ProductUnitRow[] {
@@ -425,69 +496,133 @@ export function PosPage() {
     if (!first) return;
     const unitId = first.unit_id || product.default_unit_id;
     if (!unitId && !first.units) return;
-    const price = resolvePrice(product, first.unit_id || unitId || "", "retail");
+    const variants = productVariants[product.id] ?? [];
+    const firstReplace = variants.find((v) => v.price_type === "replace") ?? null;
+    const price = resolvePrice(
+      product,
+      first.unit_id || unitId || "",
+      "retail",
+      firstReplace,
+      []
+    );
     if (price == null) return;
     setAddModal({
       product,
       qty: 1,
       selectedUnit: first,
+      selectedReplaceVariant: firstReplace,
+      selectedAddonVariants: [],
       priceType: "retail",
     });
   }
 
+  function cartItemKey(c: CartItem): string {
+    const addon = (c.addonVariantIds ?? []).slice().sort().join(",");
+    return `${c.productId}-${c.unitId}-${c.replaceVariantId ?? c.productVariantId ?? ""}-${addon}`;
+  }
+
   function doAddToCart() {
     if (!addModal) return;
-    const { product, qty, selectedUnit, priceType: pt, editCartKey } = addModal;
+    const {
+      product,
+      qty,
+      selectedUnit,
+      selectedReplaceVariant,
+      selectedAddonVariants,
+      priceType: pt,
+      editCartKey,
+    } = addModal;
     if (!selectedUnit || qty < 1) return;
     const unitId = selectedUnit.unit_id;
-    const price = resolvePrice(product, unitId, pt);
+    const price = resolvePrice(
+      product,
+      unitId,
+      pt,
+      selectedReplaceVariant,
+      selectedAddonVariants
+    );
     if (price == null) return;
     const unitSymbol = selectedUnit.units?.symbol ?? "pcs";
     const conversionToBase = selectedUnit.conversion_to_base ?? 1;
+    const replaceVariantId = selectedReplaceVariant?.id ?? null;
+    const replaceVariantName = selectedReplaceVariant?.name ?? null;
+    const addonVariantIds = selectedAddonVariants.map((v) => v.id);
+    const addonVariantNames = selectedAddonVariants.map((v) => v.name);
 
     let nextCart = cart;
+    const newItem: CartItem = {
+      productId: product.id,
+      unitId,
+      unitSymbol,
+      conversionToBase,
+      name: product.name,
+      price,
+      qty,
+      replaceVariantId,
+      replaceVariantName,
+      addonVariantIds,
+      addonVariantNames,
+      productVariantId: replaceVariantId,
+    };
+    const newKey = cartItemKey(newItem);
     if (editCartKey) {
-      nextCart = cart.filter((c) => `${c.productId}-${c.unitId}` !== editCartKey);
+      nextCart = cart.filter((c) => cartItemKey(c) !== editCartKey);
     }
-    const existing = nextCart.find((c) => c.productId === product.id && c.unitId === unitId);
+    const existing = nextCart.find((c) => cartItemKey(c) === newKey);
     if (existing) {
       setCart(
         nextCart.map((c) =>
-          c.productId === product.id && c.unitId === unitId
-            ? { ...c, qty: c.qty + qty }
-            : c
+          cartItemKey(c) === newKey ? { ...c, qty: c.qty + qty } : c
         )
       );
     } else {
-      setCart([
-        ...nextCart,
-        {
-          productId: product.id,
-          unitId,
-          unitSymbol,
-          conversionToBase,
-          name: product.name,
-          price,
-          qty,
-        },
-      ]);
+      setCart([...nextCart, newItem]);
     }
     setAddModal(null);
   }
 
   function confirmAddToCart() {
     if (!addModal) return;
-    const { product, qty, selectedUnit, priceType: pt, editCartKey } = addModal;
+    const {
+      product,
+      qty,
+      selectedUnit,
+      selectedReplaceVariant,
+      selectedAddonVariants,
+      priceType: pt,
+      editCartKey,
+    } = addModal;
     if (!selectedUnit || qty < 1) return;
     const unitId = selectedUnit.unit_id;
-    const price = resolvePrice(product, unitId, pt);
+    const price = resolvePrice(
+      product,
+      unitId,
+      pt,
+      selectedReplaceVariant,
+      selectedAddonVariants
+    );
     if (price == null) return;
     const conversionToBase = selectedUnit.conversion_to_base ?? 1;
+    const newItem: CartItem = {
+      productId: product.id,
+      unitId,
+      unitSymbol: selectedUnit.units?.symbol ?? "pcs",
+      conversionToBase,
+      name: product.name,
+      price: price,
+      qty: 0,
+      replaceVariantId: selectedReplaceVariant?.id ?? null,
+      replaceVariantName: selectedReplaceVariant?.name ?? null,
+      addonVariantIds: selectedAddonVariants.map((v) => v.id),
+      addonVariantNames: selectedAddonVariants.map((v) => v.name),
+      productVariantId: selectedReplaceVariant?.id ?? null,
+    };
+    const newKey = cartItemKey(newItem);
 
     const cartWithoutEdit = editCartKey
-      ? cart.filter((c) => `${c.productId}-${c.unitId}` !== editCartKey)
+      ? cart.filter((c) => cartItemKey(c) !== editCartKey)
       : cart;
-    const existing = cartWithoutEdit.find((c) => c.productId === product.id && c.unitId === unitId);
+    const existing = cartWithoutEdit.find((c) => cartItemKey(c) === newKey);
     const existingQtyBase = (existing ? existing.qty * existing.conversionToBase : 0);
     const newQtyBase = qty * conversionToBase;
     const totalQtyBase = existingQtyBase + newQtyBase;
@@ -510,8 +645,17 @@ export function PosPage() {
 
   function addToCart(product: ProductWithCategory) {
     const units = getUnitsForProduct(product);
-    if (units.length === 1) {
-      setAddModal({ product, qty: 1, selectedUnit: units[0], priceType: "retail" });
+    const variants = productVariants[product.id] ?? [];
+    const selectedReplace = variants.find((v) => v.price_type === "replace") ?? null;
+    if (units.length === 1 && variants.length === 0) {
+      setAddModal({
+        product,
+        qty: 1,
+        selectedUnit: units[0],
+        selectedReplaceVariant: selectedReplace,
+        selectedAddonVariants: [],
+        priceType: "retail",
+      });
       return;
     }
     openAddModal(product);
@@ -523,12 +667,22 @@ export function PosPage() {
     const units = getUnitsForProduct(product);
     const selectedUnit = units.find((u) => u.unit_id === item.unitId) ?? units[0];
     if (!selectedUnit) return;
+    const variants = productVariants[product.id] ?? [];
+    const replaceId = item.replaceVariantId ?? item.productVariantId;
+    const selectedReplaceVariant = replaceId
+      ? variants.find((v) => v.id === replaceId) ?? null
+      : null;
+    const selectedAddonVariants = (item.addonVariantIds ?? [])
+      .map((id) => variants.find((v) => v.id === id))
+      .filter((v): v is ProductVariantRow => v != null);
     setAddModal({
       product,
       qty: item.qty,
       selectedUnit,
+      selectedReplaceVariant,
+      selectedAddonVariants,
       priceType: "retail",
-      editCartKey: `${item.productId}-${item.unitId}`,
+      editCartKey: cartItemKey(item),
     });
   }
 
@@ -546,28 +700,28 @@ export function PosPage() {
     if (!first) return false;
     const price = resolvePrice(product, first.unit_id, "retail");
     if (price == null) return false;
-    const existing = cart.find((c) => c.productId === product.id && c.unitId === first.unit_id);
+    const noVariantItem: CartItem = {
+      productId: product.id,
+      unitId: first.unit_id,
+      unitSymbol: first.units?.symbol ?? "pcs",
+      conversionToBase: first.conversion_to_base ?? 1,
+      name: product.name,
+      price,
+      qty: 1,
+      replaceVariantId: null,
+      addonVariantIds: [],
+      addonVariantNames: [],
+      productVariantId: null,
+    };
+    const existing = cart.find((c) => cartItemKey(c) === cartItemKey(noVariantItem));
     if (existing) {
       setCart(
         cart.map((c) =>
-          c.productId === product.id && c.unitId === first.unit_id
-            ? { ...c, qty: c.qty + 1 }
-            : c
+          cartItemKey(c) === cartItemKey(noVariantItem) ? { ...c, qty: c.qty + 1 } : c
         )
       );
     } else {
-      setCart([
-        ...cart,
-        {
-          productId: product.id,
-          unitId: first.unit_id,
-          unitSymbol: first.units?.symbol ?? "pcs",
-          conversionToBase: first.conversion_to_base ?? 1,
-          name: product.name,
-          price,
-          qty: 1,
-        },
-      ]);
+      setCart([...cart, { ...noVariantItem }]);
     }
     return true;
   }
@@ -602,32 +756,30 @@ export function PosPage() {
     }
   }
 
-  function doUpdateQty(productId: string, unitId: string, delta: number) {
+  function doUpdateQty(key: string, delta: number) {
     setCart(
       cart
         .map((c) =>
-          c.productId === productId && c.unitId === unitId
-            ? { ...c, qty: Math.max(0, c.qty + delta) }
-            : c
+          cartItemKey(c) === key ? { ...c, qty: Math.max(0, c.qty + delta) } : c
         )
         .filter((c) => c.qty > 0)
     );
   }
 
-  function removeCartItem(productId: string, unitId: string) {
-    setCart(cart.filter((c) => !(c.productId === productId && c.unitId === unitId)));
+  function removeCartItem(item: CartItem) {
+    const key = cartItemKey(item);
+    setCart(cart.filter((c) => cartItemKey(c) !== key));
   }
 
-  function updateQty(productId: string, unitId: string, delta: number) {
+  function updateQty(item: CartItem, delta: number) {
+    const key = cartItemKey(item);
     if (delta <= 0) {
-      doUpdateQty(productId, unitId, delta);
+      doUpdateQty(key, delta);
       return;
     }
-    const item = cart.find((c) => c.productId === productId && c.unitId === unitId);
-    if (!item) return;
-    const product = products.find((p) => p.id === productId);
+    const product = products.find((p) => p.id === item.productId);
     if (!product) {
-      doUpdateQty(productId, unitId, delta);
+      doUpdateQty(key, delta);
       return;
     }
     const newQtyBase = (item.qty + delta) * item.conversionToBase;
@@ -638,13 +790,13 @@ export function PosPage() {
         title: "Stok tidak cukup",
         message: `Stok "${product.name}" hanya ${stock}. Jumlah yang diminta setara ${newQtyBase}. Lanjutkan? Stok dapat menjadi minus.`,
         onConfirm: () => {
-          doUpdateQty(productId, unitId, delta);
+          doUpdateQty(key, delta);
           setExceedStockConfirm((s) => ({ ...s, open: false }));
         },
       });
       return;
     }
-    doUpdateQty(productId, unitId, delta);
+    doUpdateQty(key, delta);
   }
 
   function openCheckoutModal() {
@@ -698,8 +850,9 @@ export function PosPage() {
       order_id: order.id,
       menu_item_id: null,
       product_id: c.productId,
+      product_variant_id: c.replaceVariantId ?? c.productVariantId ?? null,
       unit_id: c.unitId || null,
-      name: `${c.name} (${c.unitSymbol})`,
+      name: `${cartItemDisplayName(c)} (${c.unitSymbol})`,
       price: c.price,
       quantity: c.qty,
       notes: null,
@@ -791,7 +944,7 @@ export function PosPage() {
       outletName: currentOutlet?.name ?? "Toko",
       date: new Date(),
       items: cart.map((c) => ({
-        name: c.name,
+        name: cartItemDisplayName(c),
         qty: c.qty,
         unit: c.unitSymbol,
         price: c.price,
@@ -811,7 +964,12 @@ export function PosPage() {
       subtotal,
       discount: discountAmount,
       payment_method: orderPaymentMethod,
-      items: cart.map((c) => ({ product_id: c.productId, name: c.name, quantity: c.qty, price: c.price })),
+      items: cart.map((c) => ({
+        product_id: c.productId,
+        name: cartItemDisplayName(c),
+        quantity: c.qty,
+        price: c.price,
+      })),
     }).catch(() => {});
 
     setCart([]);
@@ -1097,7 +1255,9 @@ export function PosPage() {
                       onClick={(e) => { e.stopPropagation(); openEditCartItem(item); }}
                       className="min-w-0 flex-1 text-left"
                     >
-                      <p className="truncate text-sm font-medium">{item.name}</p>
+                      <p className="truncate text-sm font-medium">
+                        {cartItemDisplayName(item)}
+                      </p>
                       <p className="text-xs text-[var(--muted-foreground)]">
                         {formatIdr(item.price)} × {item.qty} {item.unitSymbol}
                       </p>
@@ -1106,7 +1266,7 @@ export function PosPage() {
                     <div className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
-                        onClick={() => updateQty(item.productId, item.unitId, -1)}
+                        onClick={() => updateQty(item, -1)}
                         className="flex h-9 w-9 touch-manipulation items-center justify-center rounded-lg bg-[var(--muted)] text-sm font-bold hover:bg-[var(--border)] active:opacity-80"
                         aria-label="Kurangi"
                       >
@@ -1115,7 +1275,7 @@ export function PosPage() {
                       <span className="min-w-[1.5rem] text-center text-sm font-medium">{item.qty}</span>
                       <button
                         type="button"
-                        onClick={() => updateQty(item.productId, item.unitId, 1)}
+                        onClick={() => updateQty(item, 1)}
                         className="flex h-9 w-9 touch-manipulation items-center justify-center rounded-lg bg-[var(--muted)] text-sm font-bold hover:bg-[var(--border)] active:opacity-80"
                         aria-label="Tambah"
                       >
@@ -1264,6 +1424,89 @@ export function PosPage() {
       >
         {addModal && (
           <div className="space-y-4">
+            {(productVariants[addModal.product.id]?.length ?? 0) > 0 && (
+              <>
+                {(productVariants[addModal.product.id] ?? []).filter((v) => v.price_type === "replace").length > 0 && (
+                  <div>
+                    <label className="mb-1 block text-xs text-[var(--muted-foreground)]">
+                      Variant (pilih satu — ganti harga penuh)
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setAddModal({ ...addModal, selectedReplaceVariant: null })
+                        }
+                        className={`rounded-lg border px-3 py-2 text-sm ${
+                          !addModal.selectedReplaceVariant
+                            ? "border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)]"
+                            : "border-[var(--border)] hover:bg-[var(--muted)]"
+                        }`}
+                      >
+                        Tanpa
+                      </button>
+                      {(productVariants[addModal.product.id] ?? [])
+                        .filter((v) => v.price_type === "replace")
+                        .map((v) => {
+                          const effective = Number(v.selling_price ?? 0);
+                          return (
+                            <button
+                              key={v.id}
+                              type="button"
+                              onClick={() =>
+                                setAddModal({ ...addModal, selectedReplaceVariant: v })
+                              }
+                              className={`rounded-lg border px-3 py-2 text-sm ${
+                                addModal.selectedReplaceVariant?.id === v.id
+                                  ? "border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)]"
+                                  : "border-[var(--border)] hover:bg-[var(--muted)]"
+                              }`}
+                            >
+                              {v.name} ({formatIdr(effective)})
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+                {(productVariants[addModal.product.id] ?? []).filter((v) => v.price_type === "addon").length > 0 && (
+                  <div>
+                    <label className="mb-1 block text-xs text-[var(--muted-foreground)]">
+                      Add-on (bisa pilih beberapa — harga ditambah)
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {(productVariants[addModal.product.id] ?? [])
+                        .filter((v) => v.price_type === "addon")
+                        .map((v) => {
+                          const vPrice = Number(v.selling_price ?? 0);
+                          const isSelected = addModal.selectedAddonVariants.some(
+                            (a) => a.id === v.id
+                          );
+                          return (
+                            <button
+                              key={v.id}
+                              type="button"
+                              onClick={() => {
+                                const next = isSelected
+                                  ? addModal.selectedAddonVariants.filter((a) => a.id !== v.id)
+                                  : [...addModal.selectedAddonVariants, v];
+                                setAddModal({ ...addModal, selectedAddonVariants: next });
+                              }}
+                              className={`rounded-lg border px-3 py-2 text-sm ${
+                                isSelected
+                                  ? "border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)]"
+                                  : "border-[var(--border)] hover:bg-[var(--muted)]"
+                              }`}
+                            >
+                              {v.name} (+ {formatIdr(vPrice)})
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
             <div>
               <label className="mb-1 block text-xs text-[var(--muted-foreground)]">Tipe Harga</label>
               <div className="flex flex-wrap gap-2">
@@ -1287,7 +1530,13 @@ export function PosPage() {
               <label className="mb-1 block text-xs text-[var(--muted-foreground)]">Satuan</label>
               <div className="flex flex-wrap gap-2">
                 {getUnitsForProduct(addModal.product).map((u) => {
-                  const price = resolvePrice(addModal.product, u.unit_id, addModal.priceType);
+                  const price = resolvePrice(
+                  addModal.product,
+                  u.unit_id,
+                  addModal.priceType,
+                  addModal.selectedReplaceVariant,
+                  addModal.selectedAddonVariants
+                );
                   const sym = u.units?.symbol ?? "pcs";
                   return (
                     <button
@@ -1412,16 +1661,12 @@ export function PosPage() {
               {debtMode === "partial" && (
                 <div className="mt-2">
                   <label className="mb-1 block text-xs text-[var(--muted-foreground)]">Bayar sekarang (Rp)</label>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={total}
-                    step={1000}
-                    value={payNow || ""}
-                    onChange={(e) => {
-                      const v = Math.min(total, Math.max(0, Number(e.target.value) || 0));
-                      setPayNow(v);
-                      if (paymentMethod === "cash") setCashReceived(v);
+                  <CurrencyInput
+                    value={payNow || 0}
+                    onChangeValue={(v: number) => {
+                      const clamped = Math.min(total, Math.max(0, v || 0));
+                      setPayNow(clamped);
+                      if (paymentMethod === "cash") setCashReceived(clamped);
                     }}
                     className="text-sm"
                   />
@@ -1434,13 +1679,10 @@ export function PosPage() {
           )}
           <div>
             <label className="mb-1 block text-xs text-[var(--muted-foreground)]">Diskon (Rp)</label>
-            <Input
-              type="number"
-              min={0}
-              step={100}
+            <CurrencyInput
+              value={discount || 0}
+              onChangeValue={(v: number) => setDiscount(v || 0)}
               placeholder="0"
-              value={discount || ""}
-              onChange={(e) => setDiscount(Number(e.target.value) || 0)}
               className="text-sm"
             />
           </div>

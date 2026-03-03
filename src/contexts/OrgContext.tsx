@@ -1,5 +1,6 @@
 import { createContext, useContext, type ReactNode } from "react";
-import type { Outlet, OutletType } from "@/lib/database.types";
+import type { Outlet, OutletType, Employee } from "@/lib/database.types";
+import type { EmployeeFeaturePermission } from "@/lib/employeeFeatures";
 import type { OutletFeaturePermission } from "@/lib/outletFeatures";
 
 interface OrgContextValue {
@@ -10,6 +11,12 @@ interface OrgContextValue {
   currentOutletType: OutletType;
   /** Permission per fitur untuk outlet aktif. Null = belum load. Kosong/tidak ada key = semua diizinkan. */
   outletFeaturePermissions: Record<string, OutletFeaturePermission> | null;
+  /** Fitur yang diizinkan untuk org ini oleh super admin (mis. kredit_syariah). Hanya tampil jika outlet_type sesuai. */
+  organizationFeatureGrants: string[];
+  /** Data karyawan terhubung ke user login (jika ada) */
+  currentEmployee: Employee | null;
+  /** Hak akses karyawan per fitur (berdasarkan kategori karyawan). Kosong/null = semua diizinkan. */
+  employeeFeaturePermissions: Record<string, EmployeeFeaturePermission> | null;
 }
 
 const OrgContext = createContext<OrgContextValue | null>(null);

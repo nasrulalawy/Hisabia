@@ -5,7 +5,36 @@ import { formatIdr } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { downloadCsv, printForPdf } from "@/lib/export";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
+} from "recharts";
 import type { AccountType } from "@/lib/database.types";
+
+const ACCOUNT_TYPE_LABELS: Record<string, string> = {
+  asset: "Aset",
+  liability: "Kewajiban",
+  equity: "Ekuitas",
+  revenue: "Pendapatan",
+  expense: "Beban",
+};
+const PIE_COLORS: Record<string, string> = {
+  asset: "#3b82f6",
+  liability: "#ef4444",
+  equity: "#22c55e",
+  revenue: "#8b5cf6",
+  expense: "#f59e0b",
+};
 
 interface Row {
   id: string;
@@ -93,6 +122,26 @@ export function NeracaSaldoPage() {
     })();
   }, [orgId, asOfDate]);
 
+  const normalDebit: Record<AccountType, boolean> = {
+    asset: true,
+    expense: true,
+    liability: false,
+    equity: false,
+    revenue: false,
+  };
+  const chartByType = rows.reduce((acc, r) => {
+    const isDebit = normalDebit[r.account_type as AccountType];
+    const bal = isDebit ? r.debit - r.credit : r.credit - r.debit;
+    if (Math.abs(bal) < 0.01) return acc;
+    const t = r.account_type as string;
+    if (!acc[t]) acc[t] = 0;
+    acc[t] += bal;
+    return acc;
+  }, {} as Record<string, number>);
+  const pieData = Object.entries(chartByType)
+    .filter(([, v]) => Math.abs(v) > 0)
+    .map(([k, v]) => ({ name: ACCOUNT_TYPE_LABELS[k] ?? k, value: Math.abs(v), color: PIE_COLORS[k] ?? "#888" }));
+
   function exportCsv() {
     const out: string[][] = [["Kode", "Nama Akun", "Tipe", "Debit", "Kredit"]];
     rows.forEach((r) => out.push([r.code, r.name, r.account_type, String(r.debit), String(r.credit)]));
@@ -161,9 +210,65 @@ export function NeracaSaldoPage() {
         </div>
       )}
       {!loading && rows.length > 0 && (
-        <p className={`text-sm ${Math.abs(totalDebit - totalCredit) < 0.01 ? "text-emerald-600" : "text-amber-600"}`}>
-          {Math.abs(totalDebit - totalCredit) < 0.01 ? "Neraca saldo seimbang." : `Selisih: ${formatIdr(totalDebit - totalCredit)}`}
-        </p>
+        <>
+          <p className={`text-sm ${Math.abs(totalDebit - totalCredit) < 0.01 ? "text-emerald-600" : "text-amber-600"}`}>
+            {Math.abs(totalDebit - totalCredit) < 0.01 ? "Neraca saldo seimbang." : `Selisih: ${formatIdr(totalDebit - totalCredit)}`}
+          </p>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Grafik Total Debit vs Kredit</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart
+                    data={[
+                      { name: "Total Debit", value: totalDebit, fill: "#3b82f6" },
+                      { name: "Total Kredit", value: totalCredit, fill: "#22c55e" },
+                    ]}
+                    margin={{ top: 8, right: 8, left: 8, bottom: 8 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                    <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                    <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => (v >= 1e6 ? `${v / 1e6}Jt` : v >= 1e3 ? `${v / 1e3}rb` : String(v))} />
+                    <Tooltip formatter={(v: number | undefined) => formatIdr(v ?? 0)} />
+                    <Bar dataKey="value" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Komposisi Saldo per Tipe Akun</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {pieData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie
+                        data={pieData}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={70}
+                        label={({ name, value }) => `${name}: ${formatIdr(value)}`}
+                      >
+                        {pieData.map((entry, i) => (
+                          <Cell key={i} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(v: number | undefined) => formatIdr(v ?? 0)} />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="py-8 text-center text-sm text-[var(--muted-foreground)]">Tidak ada saldo.</p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </>
       )}
     </div>
   );

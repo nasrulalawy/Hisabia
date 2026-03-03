@@ -5,6 +5,8 @@ import { formatIdr, formatDate } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { downloadCsv, printForPdf } from "@/lib/export";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from "recharts";
 
 type AccountType = "asset" | "liability" | "equity" | "revenue" | "expense";
 
@@ -199,6 +201,45 @@ export function NeracaPage() {
             </table>
           </div>
         </div>
+      )}
+      {!loading && accounts.length > 0 && (totalAsset > 0 || totalLiability > 0 || totalEquity + labaPeriodeBerjalan !== 0) && (
+        <Card className="max-w-md">
+          <CardHeader>
+            <CardTitle className="text-base">Grafik Komposisi Neraca</CardTitle>
+            <p className="text-sm text-[var(--muted-foreground)]">Aset vs Kewajiban vs Ekuitas (termasuk laba periode)</p>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={260}>
+              <PieChart>
+                <Pie
+                  data={[
+                    { name: "Aset", value: Math.max(0, totalAsset), color: "#3b82f6" },
+                    { name: "Kewajiban", value: Math.max(0, totalLiability), color: "#ef4444" },
+                    { name: "Ekuitas + Laba", value: Math.max(0, totalEquity + labaPeriodeBerjalan), color: "#22c55e" },
+                  ].filter((d) => d.value > 0)}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={80}
+                  label={({ name, value }) => `${name}: ${formatIdr(value)}`}
+                >
+                  {[
+                    { name: "Aset", value: Math.max(0, totalAsset), color: "#3b82f6" },
+                    { name: "Kewajiban", value: Math.max(0, totalLiability), color: "#ef4444" },
+                    { name: "Ekuitas + Laba", value: Math.max(0, totalEquity + labaPeriodeBerjalan), color: "#22c55e" },
+                  ]
+                    .filter((d) => d.value > 0)
+                    .map((entry, i) => (
+                      <Cell key={i} fill={entry.color} />
+                    ))}
+                </Pie>
+                <Tooltip formatter={(v: number | undefined) => formatIdr(v ?? 0)} />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
       )}
       {!loading && accounts.length > 0 && (
         <div className={`rounded-lg border p-4 ${Math.abs(totalAsset - totalLiabEquity) < 0.01 ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>

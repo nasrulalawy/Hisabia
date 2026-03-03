@@ -293,6 +293,89 @@ export interface Receivable {
   updated_at: string;
 }
 
+/** Izin fitur per organisasi (diberi super admin). Contoh: kredit_syariah */
+export interface OrganizationFeatureGrant {
+  organization_id: string;
+  feature_key: string;
+  granted_at: string;
+}
+
+export type KreditSyariahAkadStatus = "draft" | "aktif" | "lunas" | "macet";
+
+export interface KreditSyariahAkad {
+  id: string;
+  organization_id: string;
+  outlet_id: string | null;
+  customer_id: string;
+  order_id: string | null;
+  total_amount: number;
+  tenor_bulan: number;
+  angsuran_per_bulan: number;
+  status: KreditSyariahAkadStatus;
+  tanggal_mulai: string | null;
+  tanggal_jatuh_tempo: string | null;
+  catatan: string | null;
+  harga_barang: number | null;
+  margin_percent: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KreditSyariahAkadItem {
+  id: string;
+  akad_id: string;
+  product_id: string;
+  product_name: string | null;
+  quantity: number;
+  unit_price: number;
+  created_at: string;
+}
+
+export interface EmployeeRole {
+  id: string;
+  organization_id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EmployeeRoleFeaturePermission {
+  employee_role_id: string;
+  feature_key: string;
+  can_create: boolean;
+  can_read: boolean;
+  can_update: boolean;
+  can_delete: boolean;
+  updated_at: string;
+}
+
+export interface Employee {
+  id: string;
+  organization_id: string;
+  outlet_id: string | null;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  notes: string | null;
+  user_id: string | null;
+  employee_role_id: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KreditSyariahAngsuran {
+  id: string;
+  akad_id: string;
+  jumlah_bayar: number;
+  tanggal_bayar: string;
+  metode_bayar: string | null;
+  catatan: string | null;
+  created_at: string;
+}
+
 export interface Payable {
   id: string;
   organization_id: string;

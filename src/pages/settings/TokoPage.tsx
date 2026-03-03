@@ -8,6 +8,9 @@ import {
   setReceiptPrinterType,
   getReceiptLocalUrl,
   setReceiptLocalUrl,
+  getReceiptBluetoothConnection,
+  connectReceiptBluetooth,
+  disconnectReceiptBluetooth,
   type ReceiptPrinterType,
 } from "@/lib/receipt";
 import {
@@ -45,6 +48,9 @@ export function TokoPage() {
   const [niimbotConnected, setNiimbotConnected] = useState(false);
   const [niimbotConnecting, setNiimbotConnecting] = useState(false);
   const [niimbotConnError, setNiimbotConnError] = useState<string | null>(null);
+  const [receiptBleConnected, setReceiptBleConnected] = useState(false);
+  const [receiptBleConnecting, setReceiptBleConnecting] = useState(false);
+  const [receiptBleConnError, setReceiptBleConnError] = useState<string | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const SAMPLE_PRODUCT = {
@@ -57,6 +63,7 @@ export function TokoPage() {
 
   useEffect(() => {
     setNiimbotConnected(!!getNiimbotConnection());
+    setReceiptBleConnected(getReceiptBluetoothConnection());
   }, []);
 
   useEffect(() => {
@@ -295,6 +302,66 @@ export function TokoPage() {
             <p className="mt-1 text-xs text-[var(--muted-foreground)]">
               Jalankan Hisabia Print Agent di PC ini, lalu isi URL yang sama (default: http://localhost:3999).
             </p>
+          </div>
+        )}
+        {receiptPrinter === "bluetooth" && (
+          <div className="mt-4">
+            <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
+              Koneksi printer struk thermal (BLE)
+            </label>
+            <p className="mb-3 text-xs text-[var(--muted-foreground)]">
+              Hubungkan perangkat printer thermal Bluetooth sekali di sini. Setelah terhubung, cetak struk dari POS akan langsung ke printer ini (mobile direct).
+            </p>
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--muted)]/20 p-4">
+              <span className="text-sm font-medium text-[var(--foreground)]">
+                {receiptBleConnected ? "Printer struk terhubung" : "Printer struk belum terhubung"}
+              </span>
+              {receiptBleConnected ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    disconnectReceiptBluetooth();
+                    setReceiptBleConnected(false);
+                    setReceiptBleConnError(null);
+                  }}
+                >
+                  Putuskan
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={receiptBleConnecting || !("bluetooth" in navigator && navigator.bluetooth)}
+                  onClick={async () => {
+                    setReceiptBleConnecting(true);
+                    setReceiptBleConnError(null);
+                    try {
+                      await connectReceiptBluetooth();
+                      setReceiptBleConnected(true);
+                    } catch (err) {
+                      setReceiptBleConnError(
+                        err instanceof Error ? err.message : "Gagal menghubungkan printer struk"
+                      );
+                    } finally {
+                      setReceiptBleConnecting(false);
+                    }
+                  }}
+                >
+                  {receiptBleConnecting ? "Menghubungkan..." : "Hubungkan perangkat"}
+                </Button>
+              )}
+            </div>
+            {receiptBleConnError && (
+              <p className="mt-2 text-sm text-red-600">{receiptBleConnError}</p>
+            )}
+            {!("bluetooth" in navigator && navigator.bluetooth) && (
+              <p className="mt-2 text-xs text-amber-600">
+                Bluetooth tidak tersedia. Gunakan Chrome/Edge di Android atau desktop dengan HTTPS.
+              </p>
+            )}
           </div>
         )}
       </div>

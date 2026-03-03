@@ -3,8 +3,41 @@ import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
 import { formatIdr } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
+} from "recharts";
 
 type AccountType = "asset" | "liability" | "equity" | "revenue" | "expense";
+
+interface PosisiKeuanganItem {
+  name: string;
+  value: number;
+  color: string;
+}
+
+interface PenjualanHarianItem {
+  date: string;
+  total: number;
+  label: string;
+}
+
+const CHART_COLORS = {
+  kas: "#22c55e",
+  piutang: "#3b82f6",
+  hutang: "#ef4444",
+  persediaan: "#f59e0b",
+  laba: "#8b5cf6",
+};
 
 export function DashboardKeuanganPage() {
   const { orgId } = useOrg();
@@ -15,6 +48,8 @@ export function DashboardKeuanganPage() {
   const [persediaan, setPersediaan] = useState(0);
   const [labaPeriode, setLabaPeriode] = useState(0);
   const [penjualanHariIni, setPenjualanHariIni] = useState(0);
+  const [chartPosisi, setChartPosisi] = useState<PosisiKeuanganItem[]>([]);
+  const [chartPenjualanHarian, setChartPenjualanHarian] = useState<PenjualanHarianItem[]>([]);
 
   useEffect(() => {
     if (!orgId) return;
@@ -95,6 +130,46 @@ export function DashboardKeuanganPage() {
         .gte("created_at", todayStart.toISOString());
       const penjualan = (ordersToday ?? []).reduce((s, o) => s + Number(o.total), 0);
       setPenjualanHariIni(penjualan);
+
+      const daysBack = 14;
+      const rangeStart = new Date();
+      rangeStart.setDate(rangeStart.getDate() - daysBack);
+      rangeStart.setHours(0, 0, 0, 0);
+      const { data: ordersRange } = await supabase
+        .from("orders")
+        .select("total, created_at")
+        .eq("organization_id", orgId)
+        .eq("status", "paid")
+        .gte("created_at", rangeStart.toISOString());
+      const dayMap: Record<string, number> = {};
+      for (let i = daysBack - 1; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        dayMap[d.toISOString().slice(0, 10)] = 0;
+      }
+      (ordersRange ?? []).forEach((o: { total: number; created_at: string }) => {
+        const key = o.created_at.slice(0, 10);
+        if (key in dayMap) dayMap[key] += Number(o.total);
+      });
+      setChartPenjualanHarian(
+        Object.entries(dayMap)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([date, total]) => ({
+            date,
+            total,
+            label: new Date(date + "T12:00:00").toLocaleDateString("id-ID", { day: "numeric", month: "short" }),
+          }))
+      );
+
+      const labaRugi = totalRevenue - totalExpense;
+      setChartPosisi([
+        { name: "Kas", value: vKas, color: CHART_COLORS.kas },
+        { name: "Piutang", value: vPiutang, color: CHART_COLORS.piutang },
+        { name: "Hutang", value: Math.abs(vHutang), color: CHART_COLORS.hutang },
+        { name: "Persediaan", value: vPersediaan, color: CHART_COLORS.persediaan },
+        { name: labaRugi >= 0 ? "Laba" : "Rugi", value: Math.abs(labaRugi), color: CHART_COLORS.laba },
+      ].filter((i) => i.value > 0));
+
       setLoading(false);
     })();
   }, [orgId]);
@@ -162,6 +237,62 @@ export function DashboardKeuanganPage() {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-semibold text-[var(--foreground)]">{formatIdr(penjualanHariIni)}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Grafik Posisi Keuangan</CardTitle>
+            <p className="text-sm text-[var(--muted-foreground)]">Komposisi Kas, Piutang, Hutang, Persediaan, Laba/Rugi</p>
+          </CardHeader>
+          <CardContent>
+            {chartPosisi.length > 0 ? (
+              <ResponsiveContainer width="100%" height={280}>
+                <PieChart>
+                  <Pie
+                    data={chartPosisi}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={90}
+                    label={({ name, value }) => `${name}: ${formatIdr(value)}`}
+                    labelLine={false}
+                  >
+                    {chartPosisi.map((_, i) => (
+                      <Cell key={i} fill={chartPosisi[i].color} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(v: number | undefined) => formatIdr(v ?? 0)} />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="py-8 text-center text-sm text-[var(--muted-foreground)]">Belum ada data untuk grafik.</p>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Grafik Penjualan 14 Hari Terakhir</CardTitle>
+            <p className="text-sm text-[var(--muted-foreground)]">Total penjualan per hari (order lunas)</p>
+          </CardHeader>
+          <CardContent>
+            {chartPenjualanHarian.length > 0 ? (
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={chartPenjualanHarian} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => (v >= 1e6 ? `${v / 1e6}Jt` : `${v / 1e3}rb`)} />
+                  <Tooltip formatter={(v: number | undefined) => formatIdr(v ?? 0)} />
+                  <Bar dataKey="total" fill="var(--primary)" radius={[4, 4, 0, 0]} name="Penjualan" />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="py-8 text-center text-sm text-[var(--muted-foreground)]">Belum ada data penjualan.</p>
+            )}
           </CardContent>
         </Card>
       </div>

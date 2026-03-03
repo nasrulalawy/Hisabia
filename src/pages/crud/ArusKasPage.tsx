@@ -6,7 +6,7 @@ import { postJournalEntry } from "@/lib/accounting";
 import { DataTable, type Column } from "@/components/crud/DataTable";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
+import { CurrencyInput } from "@/components/ui/CurrencyInput";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Badge } from "@/components/ui/Badge";
 import type { CashFlow } from "@/lib/database.types";
@@ -202,12 +202,9 @@ export function ArusKasPage() {
           </div>
           <div>
             <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Jumlah (Rp) *</label>
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.amount}
-              onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+            <CurrencyInput
+              value={form.amount ? parseInt(form.amount, 10) || 0 : 0}
+              onChangeValue={(v) => setForm((f) => ({ ...f, amount: v ? String(v) : "" }))}
               placeholder="0"
               required
               autoFocus

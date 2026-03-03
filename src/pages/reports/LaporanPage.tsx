@@ -5,6 +5,19 @@ import { formatIdr, formatDate } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
+} from "recharts";
 
 type PeriodType = "day" | "week" | "month" | "year";
 
@@ -363,6 +376,26 @@ export function LaporanPage() {
             <div className="mt-3 flex flex-wrap gap-6 border-t border-[var(--border)] pt-3 text-sm">
               <span className="text-[var(--muted-foreground)]">Biaya (arus kas keluar): {formatIdr(biaya)}</span>
             </div>
+            <div className="mt-6">
+              <h4 className="mb-3 text-sm font-medium text-[var(--muted-foreground)]">Grafik Laba Rugi — {dateLabel}</h4>
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart
+                  data={[
+                    { name: "Penjualan", value: penjualan, fill: "#3b82f6" },
+                    { name: "HPP", value: hpp, fill: "#ef4444" },
+                    { name: "Laba Kotor", value: labaKotor, fill: "#22c55e" },
+                    { name: "Laba Bersih", value: labaBersih, fill: labaBersih >= 0 ? "#8b5cf6" : "#ef4444" },
+                  ]}
+                  margin={{ top: 8, right: 8, left: 8, bottom: 8 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => (v >= 1e6 ? `${v / 1e6}Jt` : v >= 1e3 ? `${v / 1e3}rb` : String(v))} />
+                  <Tooltip formatter={(v: number | undefined) => formatIdr(v ?? 0)} />
+                  <Bar dataKey="value" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
 
           <div>
@@ -454,6 +487,123 @@ export function LaporanPage() {
               <CardContent>
                 <p className="text-xl font-bold text-[var(--foreground)]">{orderCount}</p>
                 <p className="text-xs text-[var(--muted-foreground)]">Order lunas</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Grafik Arus Kas (Periode)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {(cashSummary.in > 0 || cashSummary.out > 0) ? (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: "Kas Masuk", value: cashSummary.in, color: "#22c55e" },
+                          { name: "Kas Keluar", value: cashSummary.out, color: "#ef4444" },
+                        ].filter((d) => d.value > 0)}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={70}
+                        label={({ name, value }) => `${name}: ${formatIdr(value)}`}
+                      >
+                        {[
+                          { name: "Kas Masuk", value: cashSummary.in, color: "#22c55e" },
+                          { name: "Kas Keluar", value: cashSummary.out, color: "#ef4444" },
+                        ]
+                          .filter((d) => d.value > 0)
+                          .map((entry, i) => (
+                            <Cell key={i} fill={entry.color} />
+                          ))}
+                      </Pie>
+                      <Tooltip formatter={(v: number | undefined) => formatIdr(v ?? 0)} />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="py-6 text-center text-sm text-[var(--muted-foreground)]">Tidak ada arus kas pada periode ini.</p>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Grafik Piutang</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {(receivableSummary.paid > 0 || receivableSummary.unpaid > 0) ? (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: "Sudah Dibayar", value: receivableSummary.paid, color: "#22c55e" },
+                          { name: "Belum Dibayar", value: receivableSummary.unpaid, color: "#f59e0b" },
+                        ].filter((d) => d.value > 0)}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={70}
+                        label={({ name, value }) => `${name}: ${formatIdr(value)}`}
+                      >
+                        {[
+                          { name: "Sudah Dibayar", value: receivableSummary.paid, color: "#22c55e" },
+                          { name: "Belum Dibayar", value: receivableSummary.unpaid, color: "#f59e0b" },
+                        ]
+                          .filter((d) => d.value > 0)
+                          .map((entry, i) => (
+                            <Cell key={i} fill={entry.color} />
+                          ))}
+                      </Pie>
+                      <Tooltip formatter={(v: number | undefined) => formatIdr(v ?? 0)} />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="py-6 text-center text-sm text-[var(--muted-foreground)]">Tidak ada piutang.</p>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Grafik Hutang</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {(payableSummary.paid > 0 || payableSummary.unpaid > 0) ? (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: "Sudah Dibayar", value: payableSummary.paid, color: "#22c55e" },
+                          { name: "Belum Dibayar", value: payableSummary.unpaid, color: "#ef4444" },
+                        ].filter((d) => d.value > 0)}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={70}
+                        label={({ name, value }) => `${name}: ${formatIdr(value)}`}
+                      >
+                        {[
+                          { name: "Sudah Dibayar", value: payableSummary.paid, color: "#22c55e" },
+                          { name: "Belum Dibayar", value: payableSummary.unpaid, color: "#ef4444" },
+                        ]
+                          .filter((d) => d.value > 0)
+                          .map((entry, i) => (
+                            <Cell key={i} fill={entry.color} />
+                          ))}
+                      </Pie>
+                      <Tooltip formatter={(v: number | undefined) => formatIdr(v ?? 0)} />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="py-6 text-center text-sm text-[var(--muted-foreground)]">Tidak ada hutang.</p>
+                )}
               </CardContent>
             </Card>
           </div>

@@ -5,6 +5,20 @@ import { formatIdr, formatDate } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { downloadCsv, printForPdf } from "@/lib/export";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
+} from "recharts";
 
 interface AccountBalance {
   id: string;
@@ -172,6 +186,71 @@ export function LabaRugiPage() {
               </tfoot>
             )}
           </table>
+
+          {(revenue.length > 0 || expense.length > 0) && (
+            <div className="mt-8 grid gap-6 border-t border-[var(--border)] pt-8 lg:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Grafik Pendapatan vs Beban</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={240}>
+                    <BarChart
+                      data={[
+                        { name: "Total Pendapatan", value: totalRevenue, fill: "#22c55e" },
+                        { name: "Total Beban", value: totalExpense, fill: "#ef4444" },
+                        { name: "Laba (Rugi) Bersih", value: netIncome, fill: netIncome >= 0 ? "#8b5cf6" : "#ef4444" },
+                      ]}
+                      margin={{ top: 8, right: 8, left: 8, bottom: 8 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => (v >= 1e6 ? `${v / 1e6}Jt` : v >= 1e3 ? `${v / 1e3}rb` : String(v))} />
+                      <Tooltip formatter={(v: number | undefined) => formatIdr(v ?? 0)} />
+                      <Bar dataKey="value" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Komposisi Pendapatan & Beban per Akun</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {(() => {
+                    const pieData = [
+                      ...revenue.filter((a) => a.balance > 0).map((a) => ({ name: a.name, value: a.balance, color: "#22c55e" })),
+                      ...expense.filter((a) => a.balance > 0).map((a) => ({ name: a.name, value: a.balance, color: "#ef4444" })),
+                    ];
+                    return pieData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={240}>
+                        <PieChart>
+                          <Pie
+                            data={pieData}
+                            dataKey="value"
+                            nameKey="name"
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={75}
+                            label={({ name, value }) => `${name}: ${formatIdr(value)}`}
+                            labelLine={false}
+                          >
+                            {pieData.map((entry, i) => (
+                              <Cell key={i} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip formatter={(v: number | undefined) => formatIdr(v ?? 0)} />
+                          <Legend />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <p className="py-8 text-center text-sm text-[var(--muted-foreground)]">Tidak ada saldo pada periode ini.</p>
+                    );
+                  })()}
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -1,12 +1,17 @@
 import { useEffect, useState } from "react";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
+import { formatDate, formatIdr } from "@/lib/utils";
 import { DataTable, type Column } from "@/components/crud/DataTable";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import type { Customer } from "@/lib/database.types";
+import type {
+  Customer,
+  KreditSyariahAkad,
+  KreditSyariahAngsuran,
+} from "@/lib/database.types";
 
 export function PelangganPage() {
   const { orgId } = useOrg();
@@ -30,6 +35,10 @@ export function PelangganPage() {
   const [inviteCustomer, setInviteCustomer] = useState<Customer | null>(null);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [inviteLoading, setInviteLoading] = useState(false);
+  const [akadLoading, setAkadLoading] = useState(false);
+  const [akadRows, setAkadRows] = useState<
+    (KreditSyariahAkad & { totalPaid: number; remaining: number })[]
+  >([]);
 
   async function fetchData() {
     if (!orgId) return;
@@ -83,6 +92,41 @@ export function PelangganPage() {
     });
     setError(null);
     setModalOpen(true);
+    loadCustomerAkad(row.id);
+  }
+
+  async function loadCustomerAkad(customerId: string) {
+    if (!orgId) return;
+    setAkadLoading(true);
+    const { data: akadData, error: akadErr } = await supabase
+      .from("kredit_syariah_akad")
+      .select("id, organization_id, customer_id, total_amount, tenor_bulan, angsuran_per_bulan, status, tanggal_mulai, tanggal_jatuh_tempo, created_at, updated_at")
+      .eq("organization_id", orgId)
+      .eq("customer_id", customerId)
+      .order("created_at", { ascending: false });
+    if (akadErr || !akadData || akadData.length === 0) {
+      setAkadRows([]);
+      setAkadLoading(false);
+      return;
+    }
+    const akadList = akadData as KreditSyariahAkad[];
+    const ids = akadList.map((a) => a.id);
+    const { data: angsuranData } = await supabase
+      .from("kredit_syariah_angsuran")
+      .select("akad_id, jumlah_bayar")
+      .in("akad_id", ids);
+    const paidMap = new Map<string, number>();
+    (angsuranData as KreditSyariahAngsuran[] | null ?? []).forEach((row) => {
+      const prev = paidMap.get(row.akad_id) ?? 0;
+      paidMap.set(row.akad_id, prev + Number(row.jumlah_bayar));
+    });
+    const extended = akadList.map((a) => {
+      const totalPaid = paidMap.get(a.id) ?? 0;
+      const remaining = Math.max(0, Number(a.total_amount) - totalPaid);
+      return { ...a, totalPaid, remaining };
+    });
+    setAkadRows(extended);
+    setAkadLoading(false);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -283,6 +327,86 @@ export function PelangganPage() {
               className="h-20 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
             />
           </div>
+          {editing && (
+            <div className="mt-4 border-t border-[var(--border)] pt-4">
+              <h3 className="mb-2 text-sm font-semibold text-[var(--foreground)]">
+                Kredit Syariah (Cicilan)
+              </h3>
+              {akadLoading ? (
+                <p className="text-xs text-[var(--muted-foreground)]">Memuat data cicilan...</p>
+              ) : akadRows.length === 0 ? (
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  Pelanggan ini belum memiliki akad cicilan.
+                </p>
+              ) : (
+                <>
+                  <div className="mb-3 grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-lg border border-[var(--border)] bg-[var(--muted)]/20 p-3">
+                      <p className="text-xs text-[var(--muted-foreground)]">Total Pembiayaan</p>
+                      <p className="mt-1 text-sm font-semibold">
+                        {formatIdr(
+                          akadRows.reduce(
+                            (sum, a) => sum + Number(a.total_amount),
+                            0
+                          )
+                        )}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-[var(--border)] bg-[var(--muted)]/20 p-3">
+                      <p className="text-xs text-[var(--muted-foreground)]">Total Sudah Dibayar</p>
+                      <p className="mt-1 text-sm font-semibold text-emerald-600">
+                        {formatIdr(akadRows.reduce((sum, a) => sum + a.totalPaid, 0))}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-[var(--border)] bg-[var(--muted)]/20 p-3">
+                      <p className="text-xs text-[var(--muted-foreground)]">Total Belum Dibayar</p>
+                      <p className="mt-1 text-sm font-semibold text-red-600">
+                        {formatIdr(akadRows.reduce((sum, a) => sum + a.remaining, 0))}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="max-h-60 overflow-y-auto rounded-lg border border-[var(--border)]">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-[var(--border)] bg-[var(--muted)]/30 text-[var(--muted-foreground)]">
+                          <th className="px-3 py-2 text-left font-medium">Akad</th>
+                          <th className="px-3 py-2 text-left font-medium">Status</th>
+                          <th className="px-3 py-2 text-right font-medium">Total</th>
+                          <th className="px-3 py-2 text-right font-medium">Sudah Dibayar</th>
+                          <th className="px-3 py-2 text-right font-medium">Sisa</th>
+                          <th className="px-3 py-2 text-left font-medium">Mulai</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {akadRows.map((a) => (
+                          <tr key={a.id} className="border-b border-[var(--border)] last:border-0">
+                            <td className="px-3 py-2 font-mono">
+                              #{a.id.slice(0, 8)}
+                            </td>
+                            <td className="px-3 py-2 capitalize">
+                              {a.status}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {formatIdr(Number(a.total_amount))}
+                            </td>
+                            <td className="px-3 py-2 text-right text-emerald-600">
+                              {formatIdr(a.totalPaid)}
+                            </td>
+                            <td className="px-3 py-2 text-right text-red-600">
+                              {formatIdr(a.remaining)}
+                            </td>
+                            <td className="px-3 py-2">
+                              {a.tanggal_mulai ? formatDate(a.tanggal_mulai) : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
           <div>
             <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Catatan</label>
             <textarea

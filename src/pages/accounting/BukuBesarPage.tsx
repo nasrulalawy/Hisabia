@@ -5,6 +5,16 @@ import { formatIdr, formatDate } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { downloadCsv, printForPdf } from "@/lib/export";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 import type { ChartOfAccount } from "@/lib/database.types";
 
 interface LedgerRow {
@@ -207,6 +217,32 @@ export function BukuBesarPage() {
             )}
           </table>
         </div>
+      )}
+      {selectedAccount && rows.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Grafik Saldo Berjalan</CardTitle>
+            <p className="text-sm text-[var(--muted-foreground)]">Pergerakan saldo akun per tanggal</p>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={260}>
+              <LineChart
+                data={rows.map((r) => ({
+                  date: r.entry_date,
+                  label: formatDate(r.entry_date),
+                  balance: r.balance,
+                }))}
+                margin={{ top: 8, right: 8, left: 8, bottom: 8 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => (v >= 1e6 ? `${v / 1e6}Jt` : v >= 1e3 ? `${v / 1e3}rb` : String(v))} />
+                <Tooltip formatter={(v: number | undefined) => formatIdr(v ?? 0)} />
+                <Line type="monotone" dataKey="balance" stroke="var(--primary)" strokeWidth={2} dot={{ r: 3 }} name="Saldo" />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

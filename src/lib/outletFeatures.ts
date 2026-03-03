@@ -38,7 +38,9 @@ export type OutletFeatureKey =
   | "toko"
   | "integrasi"
   | "subscription"
-  | "laporan_harian";
+  | "laporan_harian"
+  | "karyawan"
+  | "kategori_karyawan";
 
 /** Mapping dari href (path sidebar) ke feature_key */
 export const ROUTE_TO_FEATURE_KEY: Record<string, OutletFeatureKey> = {
@@ -70,6 +72,8 @@ export const ROUTE_TO_FEATURE_KEY: Record<string, OutletFeatureKey> = {
   integrasi: "integrasi",
   subscription: "subscription",
   "laporan-harian": "laporan_harian",
+  karyawan: "karyawan",
+  "kategori-karyawan": "kategori_karyawan",
 };
 
 /** Daftar semua fitur untuk admin UI (key, label) */
@@ -102,6 +106,8 @@ export const OUTLET_FEATURE_LIST: { key: OutletFeatureKey; label: string }[] = [
   { key: "integrasi", label: "Integrasi n8n" },
   { key: "subscription", label: "Subscription" },
   { key: "laporan_harian", label: "Laporan Harian" },
+  { key: "karyawan", label: "Karyawan" },
+  { key: "kategori_karyawan", label: "Kategori Karyawan" },
 ];
 
 const DEFAULT_PERMISSION: OutletFeaturePermission = {

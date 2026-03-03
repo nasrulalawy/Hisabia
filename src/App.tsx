@@ -42,6 +42,11 @@ import { CatalogPage } from "@/pages/shop/CatalogPage";
 import { OrderDetailPage } from "@/pages/order/OrderDetailPage";
 import { TokoPage } from "@/pages/settings/TokoPage";
 import { IntegrasiPage } from "@/pages/settings/IntegrasiPage";
+import { KreditSyariahPage } from "@/pages/kredit-syariah/KreditSyariahPage";
+import { KreditSyariahFormPage } from "@/pages/kredit-syariah/KreditSyariahFormPage";
+import { KreditSyariahDetailPage } from "@/pages/kredit-syariah/KreditSyariahDetailPage";
+import { KaryawanPage } from "@/pages/crud/KaryawanPage";
+import { KategoriKaryawanPage } from "@/pages/crud/KategoriKaryawanPage";
 import { DaftarPelanggan } from "@/pages/DaftarPelanggan";
 import { AdminDashboard } from "@/pages/admin/AdminDashboard";
 import { InstallPWA } from "@/components/InstallPWA";
@@ -182,6 +187,11 @@ export default function App() {
           <Route path="subscription/success" element={<PaymentSuccessPage />} />
           <Route path="toko" element={<TokoPage />} />
           <Route path="integrasi" element={<IntegrasiPage />} />
+          <Route path="karyawan" element={<KaryawanPage />} />
+          <Route path="kategori-karyawan" element={<KategoriKaryawanPage />} />
+          <Route path="kredit-syariah" element={<KreditSyariahPage />} />
+          <Route path="kredit-syariah/baru" element={<KreditSyariahFormPage />} />
+          <Route path="kredit-syariah/:akadId" element={<KreditSyariahDetailPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

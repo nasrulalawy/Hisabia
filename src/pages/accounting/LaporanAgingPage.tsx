@@ -2,6 +2,16 @@ import { useEffect, useState } from "react";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
 import { formatIdr } from "@/lib/utils";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 
 type Tab = "piutang" | "hutang";
 
@@ -125,6 +135,32 @@ export function LaporanAgingPage() {
               Total {title}: {formatIdr(data.total)}
             </p>
           </div>
+          {data.total > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Grafik Umur {tab === "piutang" ? "Piutang" : "Hutang"}</CardTitle>
+                <p className="text-sm text-[var(--muted-foreground)]">Sisa tagihan/utang per kelompok keterlambatan</p>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart
+                    data={BUCKETS.map((b) => {
+                      const items = data.byBucket[b.key];
+                      const sum = items?.reduce((s, i) => s + i.sisa, 0) ?? 0;
+                      return { name: b.label, value: sum, count: items?.length ?? 0 };
+                    }).filter((d) => d.value > 0)}
+                    margin={{ top: 8, right: 8, left: 8, bottom: 24 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                    <XAxis dataKey="name" tick={{ fontSize: 10 }} angle={-25} textAnchor="end" height={60} />
+                    <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => (v >= 1e6 ? `${v / 1e6}Jt` : v >= 1e3 ? `${v / 1e3}rb` : String(v))} />
+                    <Tooltip formatter={(v: number | undefined) => formatIdr(v ?? 0)} />
+                    <Bar dataKey="value" fill="var(--primary)" radius={[4, 4, 0, 0]} name="Jumlah" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          )}
           <div className="space-y-6">
             {BUCKETS.map((b) => {
               const items = data.byBucket[b.key];

@@ -6,6 +6,7 @@ import { DataTable, type Column } from "@/components/crud/DataTable";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { CurrencyInput } from "@/components/ui/CurrencyInput";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { postJournalEntry } from "@/lib/accounting";
 import type { Receivable } from "@/lib/database.types";
@@ -249,23 +250,17 @@ function PiutangSection() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Jumlah (Rp) *</label>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={form.amount}
-                onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+              <CurrencyInput
+                value={form.amount ? parseInt(form.amount, 10) || 0 : 0}
+                onChangeValue={(v) => setForm((f) => ({ ...f, amount: v ? String(v) : "" }))}
                 required
               />
             </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Sudah Dibayar (Rp)</label>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={form.paid}
-                onChange={(e) => setForm((f) => ({ ...f, paid: e.target.value }))}
+              <CurrencyInput
+                value={form.paid ? parseInt(form.paid, 10) || 0 : 0}
+                onChangeValue={(v) => setForm((f) => ({ ...f, paid: v ? String(v) : "" }))}
               />
             </div>
           </div>

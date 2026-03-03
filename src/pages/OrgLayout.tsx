@@ -5,7 +5,12 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import { OrgProvider } from "@/contexts/OrgContext";
 import { normalizeOutletPermissions } from "@/lib/outletFeatures";
-import type { Outlet as OutletType } from "@/lib/database.types";
+import { normalizeEmployeePermissions } from "@/lib/employeeFeatures";
+import type {
+  Outlet as OutletType,
+  Employee,
+  EmployeeRoleFeaturePermission,
+} from "@/lib/database.types";
 
 const OUTLET_COOKIE = "hisabia-current-outlet";
 
@@ -31,6 +36,11 @@ export function OrgLayout() {
   const [outlets, setOutlets] = useState<OutletType[] | null>(null);
   const [currentOutletId, setCurrentOutletId] = useState<string | null>(null);
   const [outletFeaturePermissions, setOutletFeaturePermissions] = useState<Record<string, { can_create: boolean; can_read: boolean; can_update: boolean; can_delete: boolean }> | null>(null);
+  const [organizationFeatureGrants, setOrganizationFeatureGrants] = useState<string[]>([]);
+  const [currentEmployee, setCurrentEmployee] = useState<Employee | null>(null);
+  const [employeeFeaturePermissions, setEmployeeFeaturePermissions] = useState<
+    Record<string, { can_create: boolean; can_read: boolean; can_update: boolean; can_delete: boolean }> | null
+  >(null);
   const [loading, setLoading] = useState(true);
   const [trialExpired, setTrialExpired] = useState(false);
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
@@ -98,6 +108,40 @@ export function OrgLayout() {
       const periodEnd = sub?.current_period_end ? new Date(sub.current_period_end) : null;
       setTrialExpired(!!(isTrialing && periodEnd && periodEnd < new Date()));
 
+      const { data: grantsData } = await supabase
+        .from("organization_feature_grants")
+        .select("feature_key")
+        .eq("organization_id", orgId);
+      setOrganizationFeatureGrants((grantsData ?? []).map((r: { feature_key: string }) => r.feature_key));
+
+      // Karyawan & hak akses kategori karyawan untuk user login (jika ada)
+      const { data: employeeData } = await supabase
+        .from("employees")
+        .select("*")
+        .eq("organization_id", orgId)
+        .eq("user_id", u.id)
+        .maybeSingle();
+      if (employeeData) {
+        const emp = employeeData as Employee;
+        setCurrentEmployee(emp);
+        if (emp.employee_role_id) {
+          const { data: empPermRows } = await supabase
+            .from("employee_role_feature_permissions")
+            .select("employee_role_id, feature_key, can_create, can_read, can_update, can_delete")
+            .eq("employee_role_id", emp.employee_role_id);
+          setEmployeeFeaturePermissions(
+            normalizeEmployeePermissions(
+              (empPermRows ?? []) as EmployeeRoleFeaturePermission[]
+            )
+          );
+        } else {
+          setEmployeeFeaturePermissions(null);
+        }
+      } else {
+        setCurrentEmployee(null);
+        setEmployeeFeaturePermissions(null);
+      }
+
       setLoading(false);
     };
     run();
@@ -148,6 +192,9 @@ export function OrgLayout() {
         currentOutlet,
         currentOutletType,
         outletFeaturePermissions,
+        organizationFeatureGrants,
+        currentEmployee,
+        employeeFeaturePermissions,
       }}
     >
       <div className="flex h-screen overflow-hidden bg-[var(--muted)]">

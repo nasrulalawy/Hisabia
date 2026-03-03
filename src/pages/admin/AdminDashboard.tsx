@@ -55,6 +55,8 @@ export function AdminDashboard() {
   const [featurePerms, setFeaturePerms] = useState<Record<string, OutletFeaturePermission>>({});
   const [featurePermsLoading, setFeaturePermsLoading] = useState(false);
   const [featurePermsSaving, setFeaturePermsSaving] = useState(false);
+  const [kreditSyariahGrantedIds, setKreditSyariahGrantedIds] = useState<Set<string>>(new Set());
+  const [kreditSyariahToggling, setKreditSyariahToggling] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -91,6 +93,13 @@ export function AdminDashboard() {
           revenueMonth: statsData.revenueMonth ?? 0,
         });
       }
+      const { data: grantsData } = await supabase
+        .from("organization_feature_grants")
+        .select("organization_id")
+        .eq("feature_key", "kredit_syariah");
+      setKreditSyariahGrantedIds(
+        new Set((grantsData ?? []).map((r: { organization_id: string }) => r.organization_id))
+      );
       setLoading(false);
     })();
   }, []);
@@ -180,6 +189,30 @@ export function AdminDashboard() {
         [field]: value,
       },
     }));
+  }
+
+  async function handleKreditSyariahToggle(orgId: string) {
+    const hasGrant = kreditSyariahGrantedIds.has(orgId);
+    setKreditSyariahToggling(orgId);
+    if (hasGrant) {
+      await supabase
+        .from("organization_feature_grants")
+        .delete()
+        .eq("organization_id", orgId)
+        .eq("feature_key", "kredit_syariah");
+      setKreditSyariahGrantedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(orgId);
+        return next;
+      });
+    } else {
+      await supabase.from("organization_feature_grants").insert({
+        organization_id: orgId,
+        feature_key: "kredit_syariah",
+      });
+      setKreditSyariahGrantedIds((prev) => new Set(prev).add(orgId));
+    }
+    setKreditSyariahToggling(null);
   }
 
   async function handleSaveFeaturePerms() {
@@ -331,6 +364,7 @@ export function AdminDashboard() {
                       <th className="pb-3 font-medium">Status</th>
                       <th className="pb-3 font-medium">Member</th>
                       <th className="pb-3 font-medium">Outlet</th>
+                      <th className="pb-3 font-medium">Kredit Syariah</th>
                       <th className="pb-3 font-medium">Dibuat</th>
                     </tr>
                   </thead>
@@ -380,6 +414,21 @@ export function AdminDashboard() {
                         </td>
                         <td className="py-3">{org.member_count}</td>
                         <td className="py-3">{org.outlet_count}</td>
+                        <td className="py-3">
+                          <Button
+                            size="sm"
+                            variant={kreditSyariahGrantedIds.has(org.id) ? "outline" : "primary"}
+                            disabled={kreditSyariahToggling === org.id}
+                            onClick={() => handleKreditSyariahToggle(org.id)}
+                            title={kreditSyariahGrantedIds.has(org.id) ? "Cabut izin Kredit Syariah" : "Beri izin Kredit Syariah (hanya mart)"}
+                          >
+                            {kreditSyariahToggling === org.id
+                              ? "..."
+                              : kreditSyariahGrantedIds.has(org.id)
+                                ? "Cabut Izin"
+                                : "Beri Izin"}
+                          </Button>
+                        </td>
                         <td className="py-3 text-[var(--muted-foreground)]">
                           {formatDate(org.created_at)}
                         </td>
