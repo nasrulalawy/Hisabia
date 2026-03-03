@@ -18,6 +18,7 @@ import {
   printReceiptLocal,
   getReceiptPrinterType,
   getReceiptLocalUrl,
+  getReceiptSettings,
 } from "@/lib/receipt";
 import { printLabelNiimbot } from "@/lib/niimbot";
 
@@ -107,7 +108,7 @@ function getCashDenominationOptions(total: number): number[] {
 }
 
 export function PosPage() {
-  const { orgId, currentOutletId, currentOutlet, currentOutletType } = useOrg();
+  const { orgId, currentOutletId, currentOutlet, currentOutletType, currentEmployee } = useOrg();
   const [products, setProducts] = useState<ProductWithCategory[]>([]);
   const [productMeta, setProductMeta] = useState<Record<string, ProductMeta>>({});
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
@@ -955,6 +956,9 @@ export function PosPage() {
       total: finalTotal,
       paymentMethod: orderPaymentMethod,
       notes: notes.trim() || undefined,
+      cashierName: currentEmployee?.name ?? undefined,
+      cashReceived: orderPaymentMethod === "cash" ? cashReceived : undefined,
+      receiptSettings: currentOutletId ? getReceiptSettings(currentOutletId) : undefined,
     };
     setLastReceipt(receiptData);
 
@@ -1764,7 +1768,7 @@ export function PosPage() {
           <div className="flex gap-2">
             <Button
               className="flex-1"
-              onClick={() => checkout()}
+              onClick={() => checkout({ printAfter: true })}
               disabled={
                 checkoutLoading ||
                 (paymentMethod === "cash" &&

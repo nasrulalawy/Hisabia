@@ -41,6 +41,7 @@ import { ShopPage } from "@/pages/shop/ShopPage";
 import { CatalogPage } from "@/pages/shop/CatalogPage";
 import { OrderDetailPage } from "@/pages/order/OrderDetailPage";
 import { TokoPage } from "@/pages/settings/TokoPage";
+import { ReceiptSettingsPage } from "@/pages/settings/ReceiptSettingsPage";
 import { IntegrasiPage } from "@/pages/settings/IntegrasiPage";
 import { KreditSyariahPage } from "@/pages/kredit-syariah/KreditSyariahPage";
 import { KreditSyariahFormPage } from "@/pages/kredit-syariah/KreditSyariahFormPage";
@@ -186,6 +187,7 @@ export default function App() {
           <Route path="subscription" element={<SubscriptionPage />} />
           <Route path="subscription/success" element={<PaymentSuccessPage />} />
           <Route path="toko" element={<TokoPage />} />
+          <Route path="pengaturan-struk" element={<ReceiptSettingsPage />} />
           <Route path="integrasi" element={<IntegrasiPage />} />
           <Route path="karyawan" element={<KaryawanPage />} />
           <Route path="kategori-karyawan" element={<KategoriKaryawanPage />} />

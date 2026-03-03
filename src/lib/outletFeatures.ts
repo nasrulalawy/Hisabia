@@ -74,6 +74,7 @@ export const ROUTE_TO_FEATURE_KEY: Record<string, OutletFeatureKey> = {
   "laporan-harian": "laporan_harian",
   karyawan: "karyawan",
   "kategori-karyawan": "kategori_karyawan",
+  "pengaturan-struk": "toko",
 };
 
 /** Daftar semua fitur untuk admin UI (key, label) */

@@ -42,6 +42,100 @@ export interface ReceiptItem {
   lineTotal: number;
 }
 
+/** Id blok struk (konsep canvas). */
+export type ReceiptBlockId =
+  | "header"
+  | "address"
+  | "dateCashier"
+  | "status"
+  | "items"
+  | "total"
+  | "notes"
+  | "footer";
+
+export type ReceiptAlignment = "left" | "center";
+
+/** Layout per blok: alignment, garis pemisah, jarak sebelum & setelah. */
+export interface ReceiptBlockLayout {
+  alignment: ReceiptAlignment;
+  separatorBefore: boolean;
+  separatorAfter: boolean;
+  linesBefore: 0 | 1 | 2;
+  linesAfter: 0 | 1 | 2;
+}
+
+export const DEFAULT_BLOCK_LAYOUT: Record<ReceiptBlockId, ReceiptBlockLayout> = {
+  header: { alignment: "center", separatorBefore: false, separatorAfter: true, linesBefore: 0, linesAfter: 0 },
+  address: { alignment: "left", separatorBefore: false, separatorAfter: true, linesBefore: 0, linesAfter: 0 },
+  dateCashier: { alignment: "left", separatorBefore: false, separatorAfter: true, linesBefore: 0, linesAfter: 0 },
+  status: { alignment: "center", separatorBefore: false, separatorAfter: true, linesBefore: 0, linesAfter: 0 },
+  items: { alignment: "left", separatorBefore: false, separatorAfter: true, linesBefore: 0, linesAfter: 0 },
+  total: { alignment: "left", separatorBefore: false, separatorAfter: true, linesBefore: 0, linesAfter: 0 },
+  notes: { alignment: "left", separatorBefore: false, separatorAfter: true, linesBefore: 0, linesAfter: 0 },
+  footer: { alignment: "center", separatorBefore: true, separatorAfter: false, linesBefore: 0, linesAfter: 0 },
+};
+
+/** Pengaturan template struk (konsep canvas). Disimpan per outlet di localStorage. */
+export interface ReceiptSettings {
+  storeName: string;
+  address: string;
+  showDate: boolean;
+  showTime: boolean;
+  dateTimeFormatLong: boolean;
+  cashierLabel: string;
+  showCashier: boolean;
+  statusPaidText: string;
+  showPaymentMethodLine: boolean;
+  showTotalBayar: boolean;
+  showKembalian: boolean;
+  footerInstagram: string;
+  footerWifi: string;
+  /** Layout per blok (alignment, pemisah, jarak). Kosong = pakai default. */
+  blockLayout?: Partial<Record<ReceiptBlockId, Partial<ReceiptBlockLayout>>>;
+}
+
+export const DEFAULT_RECEIPT_SETTINGS: ReceiptSettings = {
+  storeName: "",
+  address: "",
+  showDate: true,
+  showTime: true,
+  dateTimeFormatLong: true,
+  cashierLabel: "Kasir",
+  showCashier: true,
+  statusPaidText: "# LUNAS #",
+  showPaymentMethodLine: true,
+  showTotalBayar: true,
+  showKembalian: true,
+  footerInstagram: "",
+  footerWifi: "",
+};
+
+function getBlockLayout(opt: ReceiptSettings, blockId: ReceiptBlockId): ReceiptBlockLayout {
+  const custom = opt.blockLayout?.[blockId];
+  return { ...DEFAULT_BLOCK_LAYOUT[blockId], ...custom };
+}
+
+const RECEIPT_SETTINGS_PREFIX = "hisabia-receipt-settings-";
+
+export function getReceiptSettings(outletId: string): ReceiptSettings {
+  try {
+    const raw = localStorage.getItem(RECEIPT_SETTINGS_PREFIX + outletId);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const { footerPoweredBy: _drop, notesLabel: _drop2, ...rest } = parsed;
+      return { ...DEFAULT_RECEIPT_SETTINGS, ...rest } as ReceiptSettings;
+    }
+  } catch {}
+  return { ...DEFAULT_RECEIPT_SETTINGS };
+}
+
+export function setReceiptSettings(outletId: string, s: Partial<ReceiptSettings>): void {
+  try {
+    const merged = { ...getReceiptSettings(outletId), ...s };
+    localStorage.setItem(RECEIPT_SETTINGS_PREFIX + outletId, JSON.stringify(merged));
+  } catch {}
+}
+
 export interface ReceiptData {
   orderId: string;
   outletName: string;
@@ -52,6 +146,12 @@ export interface ReceiptData {
   total: number;
   paymentMethod: string;
   notes?: string;
+  /** Nama kasir (untuk baris Kasir ... di struk). */
+  cashierName?: string;
+  /** Uang diterima (tunai) untuk hitung kembalian. */
+  cashReceived?: number;
+  /** Pengaturan template struk (dari Pengaturan Struk). Jika ada, layout ala Kelana. */
+  receiptSettings?: ReceiptSettings;
 }
 
 const PAYMENT_LABELS: Record<string, string> = {
@@ -71,8 +171,111 @@ function formatIdrReceipt(n: number): string {
   }).format(Math.round(n));
 }
 
+/** Format nominal untuk ESC/POS: hanya ASCII "Rp" + angka (tanpa karakter unik dari locale). */
+function formatIdrEscPos(n: number): string {
+  const num = Math.round(n);
+  const s = num.toLocaleString("id-ID", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  return "Rp" + s.replace(/\s/g, "");
+}
+
+function buildReceiptHtmlKelana(data: ReceiptData): string {
+  const width = "80mm";
+  const opt = data.receiptSettings!;
+  const L = (id: ReceiptBlockId) => getBlockLayout(opt, id);
+  const storeName = opt.storeName.trim() || data.outletName;
+  const dateStr = opt.dateTimeFormatLong
+    ? data.date.toLocaleDateString("id-ID", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" }) +
+      " " +
+      data.date.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
+    : data.date.toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" });
+  const paymentLabel = PAYMENT_LABELS[data.paymentMethod] ?? data.paymentMethod;
+  const cashReceived = data.cashReceived ?? data.total;
+  const kembalian = data.paymentMethod === "cash" ? Math.max(0, cashReceived - data.total) : 0;
+
+  const itemRows = data.items
+    .map(
+      (i) =>
+        `<tr><td style="padding:2px 0">${escapeHtml(i.name)}</td><td style="text-align:right;white-space:nowrap;padding:2px 0">${formatIdrReceipt(i.lineTotal)}</td></tr>
+        <tr><td style="padding:0 0 4px 8px;font-size:10px" colspan="2">${i.qty} x ${formatIdrReceipt(i.price)}</td></tr>`
+    )
+    .join("");
+
+  const footerLines: string[] = [];
+  if (opt.footerInstagram.trim()) footerLines.push(escapeHtml(opt.footerInstagram.trim()));
+  if (opt.footerWifi.trim()) footerLines.push(escapeHtml(opt.footerWifi.trim()));
+  footerLines.push("Powered By Hisabia");
+
+  const sep = '<div class="divider"></div>';
+  const align = (a: ReceiptAlignment) => (a === "center" ? "text-align:center" : "text-align:left");
+  const space = (n: number) => (n > 0 ? `<div style="height:${n * 4}px"></div>` : "");
+
+  let body = "";
+  const wrap = (blockId: ReceiptBlockId, content: string) => {
+    const lay = L(blockId);
+    body += space(lay.linesBefore);
+    if (lay.separatorBefore) body += sep;
+    body += content;
+    if (lay.separatorAfter) body += sep;
+    body += space(lay.linesAfter);
+  };
+
+  wrap("header", `<div class="block" style="${align(L("header").alignment)}"><span class="bold" style="font-size:14px">${escapeHtml(storeName)}</span></div>`);
+
+  if (opt.address.trim()) {
+    wrap("address", `<div class="block" style="font-size:10px;line-height:1.4;${align(L("address").alignment)}">${escapeHtml(opt.address.trim()).replace(/\n/g, "<br>")}</div>`);
+  }
+  if (opt.showDate || opt.showTime || (opt.showCashier && data.cashierName)) {
+    let dateCashierContent = "";
+    if (opt.showDate || opt.showTime) dateCashierContent += `<div style="font-size:11px">${escapeHtml(dateStr)}</div>`;
+    if (opt.showCashier && data.cashierName) dateCashierContent += `<div style="display:flex;justify-content:space-between;font-size:11px"><span>${escapeHtml(opt.cashierLabel)}</span><span>${escapeHtml(data.cashierName)}</span></div>`;
+    wrap("dateCashier", `<div class="block" style="${align(L("dateCashier").alignment)}">${dateCashierContent}</div>`);
+  }
+  wrap("status", `<div class="block" style="${align(L("status").alignment)}"><span class="bold" style="font-size:13px">${escapeHtml(opt.statusPaidText)}</span></div>`);
+  wrap("items", `<div class="block"><table>${itemRows}</table></div>`);
+  wrap(
+    "total",
+    `<div class="block"><table style="font-size:11px;width:100%">
+    <tr><td>TOTAL</td><td style="text-align:right" class="bold">${formatIdrReceipt(data.total)}</td></tr>
+    ${opt.showPaymentMethodLine ? `<tr><td>Pembayaran ${escapeHtml(paymentLabel)}</td><td style="text-align:right">${formatIdrReceipt(data.paymentMethod === "cash" ? cashReceived : data.total)}</td></tr>` : ""}
+    ${opt.showTotalBayar ? `<tr><td>Total Bayar</td><td style="text-align:right">${formatIdrReceipt(data.paymentMethod === "cash" ? cashReceived : data.total)}</td></tr>` : ""}
+    ${opt.showKembalian ? `<tr><td>Kembalian</td><td style="text-align:right">${formatIdrReceipt(kembalian)}</td></tr>` : ""}
+  </table></div>`
+  );
+  if (data.notes) wrap("notes", `<div class="block" style="font-size:10px;${align(L("notes").alignment)}">Keterangan: ${escapeHtml(data.notes)}</div>`);
+  wrap("footer", `<div class="block" style="font-size:10px;line-height:1.4;${align(L("footer").alignment)}">${footerLines.join("<br>")}</div>`);
+
+  return `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Struk ${escapeHtml(data.orderId)}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: monospace, 'Courier New', sans-serif; font-size: 12px; line-height: 1.4; padding: 8px; max-width: ${width}; margin: 0 auto; }
+    .center { text-align: center; }
+    .bold { font-weight: bold; }
+    table { width: 100%; border-collapse: collapse; }
+    .divider { border-top: 1px dashed #000; margin: 0; }
+    .block { margin: 0; }
+    @media print { body { padding: 0; } .no-print { display: none !important; } }
+  </style>
+</head>
+<body>
+  ${body}
+  <div class="no-print" style="margin-top:16px;text-align:center">
+    <button type="button" onclick="window.print()" style="padding:8px 16px;font-size:14px;cursor:pointer">Cetak</button>
+    <button type="button" onclick="window.close()" style="padding:8px 16px;font-size:14px;margin-left:8px;cursor:pointer">Tutup</button>
+  </div>
+  <script>window.onload = function() { window.print(); };</script>
+</body>
+</html>`;
+}
+
 /** HTML untuk print dialog (browser) — cocok thermal 80mm jika user pilih printer thermal. */
 export function buildReceiptHtml(data: ReceiptData): string {
+  if (data.receiptSettings) return buildReceiptHtmlKelana(data);
+
   const width = "80mm";
   const dateStr = data.date.toLocaleString("id-ID", {
     dateStyle: "short",
@@ -151,8 +354,111 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
+const ESC_POS_WIDTH = 32;
+
+/** ESC/POS: satu baris teks kiri + teks kanan (padding di tengah). */
+function escPosLineLR(_lines: number[], addStr: (s: string) => void, addBytes: (...arr: number[]) => void, left: string, right: string) {
+  const LF = 0x0a;
+  const pad = Math.max(0, ESC_POS_WIDTH - left.length - right.length);
+  addStr(left);
+  for (let i = 0; i < pad; i++) addStr(" ");
+  addStr(right);
+  addBytes(LF);
+}
+
+/** ESC/POS bytes layout Kelana: pakai blockLayout (alignment, separator, linesAfter) sama seperti preview. */
+function buildEscPosBytesKelana(data: ReceiptData): Uint8Array {
+  const ESC = 0x1b;
+  const GS = 0x1d;
+  const LF = 0x0a;
+  const lines: number[] = [];
+  const addBytes = (...arr: number[]) => lines.push(...arr);
+  const addStr = (s: string) => {
+    const enc = new TextEncoder().encode(s);
+    for (let i = 0; i < enc.length; i++) lines.push(enc[i]);
+  };
+  const addLine = (s: string) => {
+    addStr(s);
+    addBytes(LF);
+  };
+  const opt = data.receiptSettings!;
+  const L = (id: ReceiptBlockId) => getBlockLayout(opt, id);
+  const storeName = opt.storeName.trim() || data.outletName;
+  const dateStr = opt.dateTimeFormatLong
+    ? data.date.toLocaleDateString("id-ID", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" }) +
+      " " +
+      data.date.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
+    : data.date.toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" });
+  const paymentLabel = PAYMENT_LABELS[data.paymentMethod] ?? data.paymentMethod;
+  const cashReceived = data.cashReceived ?? data.total;
+  const kembalian = data.paymentMethod === "cash" ? Math.max(0, cashReceived - data.total) : 0;
+  const sep = "--------------------------------";
+
+  const wrap = (blockId: ReceiptBlockId, fn: () => void) => {
+    const lay = L(blockId);
+    for (let i = 0; i < lay.linesBefore; i++) addBytes(LF);
+    if (lay.separatorBefore) {
+      addLine(sep);
+      addBytes(LF);
+    }
+    addBytes(ESC, 0x61, lay.alignment === "center" ? 1 : 0);
+    fn();
+    addBytes(ESC, 0x61, 0);
+    if (lay.separatorAfter) {
+      addLine(sep);
+      addBytes(LF);
+    }
+    for (let i = 0; i < lay.linesAfter; i++) addBytes(LF);
+  };
+
+  addBytes(ESC, 0x40);
+  wrap("header", () => addLine(storeName.length > ESC_POS_WIDTH ? storeName.slice(0, ESC_POS_WIDTH - 3) + "..." : storeName));
+
+  if (opt.address.trim()) {
+    wrap("address", () => opt.address.trim().split("\n").forEach((line) => addLine(line.slice(0, ESC_POS_WIDTH))));
+  }
+  if (opt.showDate || opt.showTime || (opt.showCashier && data.cashierName)) {
+    wrap("dateCashier", () => {
+      if (opt.showDate || opt.showTime) addLine(dateStr);
+      if (opt.showCashier && data.cashierName) escPosLineLR(lines, addStr, addBytes, opt.cashierLabel, data.cashierName);
+    });
+  }
+  wrap("status", () => addLine(opt.statusPaidText));
+
+  wrap("items", () => {
+    for (const i of data.items) {
+      const name = i.name.length > 20 ? i.name.slice(0, 17) + "..." : i.name;
+      addBytes(ESC, 0x61, 0);
+      escPosLineLR(lines, addStr, addBytes, name, formatIdrEscPos(i.lineTotal));
+      addStr("  " + i.qty + " x " + formatIdrEscPos(i.price));
+      addBytes(LF);
+    }
+  });
+
+  wrap("total", () => {
+    escPosLineLR(lines, addStr, addBytes, "TOTAL", formatIdrEscPos(data.total));
+    if (opt.showPaymentMethodLine) escPosLineLR(lines, addStr, addBytes, "Pembayaran " + paymentLabel, formatIdrEscPos(data.paymentMethod === "cash" ? cashReceived : data.total));
+    if (opt.showTotalBayar) escPosLineLR(lines, addStr, addBytes, "Total Bayar", formatIdrEscPos(data.paymentMethod === "cash" ? cashReceived : data.total));
+    if (opt.showKembalian) escPosLineLR(lines, addStr, addBytes, "Kembalian", formatIdrEscPos(kembalian));
+  });
+
+  if (data.notes) wrap("notes", () => addLine("Keterangan: " + data.notes));
+
+  wrap("footer", () => {
+    if (opt.footerInstagram.trim()) addLine(opt.footerInstagram.trim());
+    if (opt.footerWifi.trim()) addLine(opt.footerWifi.trim());
+    addLine("Powered By Hisabia");
+  });
+
+  addBytes(LF, LF, LF);
+  addBytes(GS, 0x56, 0);
+  return new Uint8Array(lines);
+}
+
 /** ESC/POS bytes untuk thermal Bluetooth (Web Bluetooth). */
 export function buildEscPosBytes(data: ReceiptData): Uint8Array {
+  if (data.receiptSettings) return buildEscPosBytesKelana(data);
+
   const ESC = 0x1b;
   const GS = 0x1d;
   const LF = 0x0a;
@@ -180,16 +486,16 @@ export function buildEscPosBytes(data: ReceiptData): Uint8Array {
   addBytes(ESC, 0x61, 0);
   for (const i of data.items) {
     addLine(i.name.length > 28 ? i.name.slice(0, 25) + "..." : i.name);
-    addStr(`  ${i.qty} ${i.unit} x ${formatIdrReceipt(i.price)}`);
+    addStr(`  ${i.qty} ${i.unit} x ${formatIdrEscPos(i.price)}`);
     addBytes(LF);
-    addStr("  " + formatIdrReceipt(i.lineTotal));
+    addStr("  " + formatIdrEscPos(i.lineTotal));
     addBytes(LF);
   }
   addLine("--------------------------------");
-  addLine(`Subtotal   ${formatIdrReceipt(data.subtotal)}`);
-  if (data.discount > 0) addLine(`Diskon     -${formatIdrReceipt(data.discount)}`);
+  addLine(`Subtotal   ${formatIdrEscPos(data.subtotal)}`);
+  if (data.discount > 0) addLine(`Diskon     -${formatIdrEscPos(data.discount)}`);
   addBytes(ESC, 0x45, 1);
-  addLine(`TOTAL      ${formatIdrReceipt(data.total)}`);
+  addLine(`TOTAL      ${formatIdrEscPos(data.total)}`);
   addBytes(ESC, 0x45, 0);
   addLine(`Bayar      ${PAYMENT_LABELS[data.paymentMethod] ?? data.paymentMethod}`);
   addBytes(LF);
@@ -213,7 +519,10 @@ export function printReceiptInWindow(data: ReceiptData): void {
   w.document.close();
 }
 
+/** Service UUID yang umum dipakai printer thermal BLE (ESC/POS). */
 export const BLE_PRINTER_SERVICES = [
+  "0000ae30-0000-1000-8000-00805f9b34fb", // RPP02N, RPP02N sejenis, banyak printer thermal BLE (char write: ae01)
+  "0000ae3a-0000-1000-8000-00805f9b34fb", // Varian lain printer thermal BLE
   "0000ff00-0000-1000-8000-00805f9b34fb",
   "0000fff0-0000-1000-8000-00805f9b34fb",
   "e7810a71-73ae-499d-8c15-faa9aef0c3f2", // Nordic UART
@@ -243,6 +552,8 @@ export function getReceiptBluetoothConnection(): boolean {
   return true;
 }
 
+const BLE_CONNECT_TIMEOUT_MS = 20000;
+
 /**
  * Hubungkan printer struk thermal BLE (dipanggil dari Pengaturan Toko).
  * Pilih device dari dialog, lalu koneksi disimpan untuk cetak dari POS.
@@ -253,13 +564,50 @@ export async function connectReceiptBluetooth(): Promise<void> {
   }
   if (receiptBleCache?.server?.connected) return;
 
-  const device = await navigator.bluetooth.requestDevice({
-    filters: [],
-    optionalServices: BLE_PRINTER_SERVICES,
-  });
+  // Filter by service UUID agar hanya perangkat yang mengiklankan service printer yang muncul.
+  // Jika printer tidak muncul, gunakan acceptAllDevices (lihat blok catch di bawah).
+  let device: BluetoothDevice;
+  try {
+    device = await navigator.bluetooth.requestDevice({
+      filters: BLE_PRINTER_SERVICES.map((uuid) => ({ services: [uuid] })),
+      optionalServices: BLE_PRINTER_SERVICES,
+    });
+  } catch (filterErr) {
+    // Banyak printer thermal tidak mengiklankan service UUID; tampilkan semua perangkat.
+    device = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: BLE_PRINTER_SERVICES,
+    });
+  }
   device.addEventListener("gattserverdisconnected", () => clearReceiptBleCache());
 
-  const server = await device.gatt!.connect();
+  const connectWithTimeout = (): Promise<BluetoothRemoteGATTServer> => {
+    const gatt = device.gatt;
+    if (!gatt) return Promise.reject(new Error("Perangkat tidak mendukung GATT."));
+    return Promise.race([
+      gatt.connect(),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("Koneksi timeout. Pastikan printer menyala, dalam jangkauan, dan tidak terhubung ke perangkat lain.")),
+          BLE_CONNECT_TIMEOUT_MS
+        )
+      ),
+    ]);
+  };
+
+  let server: BluetoothRemoteGATTServer;
+  try {
+    server = await connectWithTimeout();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Connection attempt failed.";
+    if (/timeout|attempt failed|failed|refused|unreachable/i.test(msg)) {
+      throw new Error(
+        "Gagal menghubungkan ke printer. Pastikan: (1) printer menyala, (2) dalam jangkauan, (3) belum terhubung ke aplikasi lain, (4) Bluetooth perangkat Anda aktif. Coba lagi."
+      );
+    }
+    throw err;
+  }
+
   let characteristic: WritableCharacteristic | null = null;
   for (const uuid of BLE_PRINTER_SERVICES) {
     try {
@@ -279,7 +627,7 @@ export async function connectReceiptBluetooth(): Promise<void> {
   }
   if (!characteristic) {
     server.disconnect();
-    throw new Error("Tidak menemukan karakteristik tulis pada printer.");
+    throw new Error("Tidak menemukan karakteristik tulis pada printer. Pastikan ini printer thermal ESC/POS Bluetooth.");
   }
   receiptBleCache = { server, characteristic };
 }
