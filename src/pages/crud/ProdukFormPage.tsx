@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { ProductPhotoScanModal } from "@/components/product/ProductPhotoScanModal";
 import { parsePriceIdr } from "@/lib/utils";
 
 export function ProdukFormPage() {
@@ -35,6 +36,7 @@ export function ProdukFormPage() {
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imageUploading, setImageUploading] = useState(false);
+  const [photoScanModalOpen, setPhotoScanModalOpen] = useState(false);
   const MAX_IMAGE_SIZE = 2 * 1024 * 1024;
   const BUCKET = "product_images";
 
@@ -223,6 +225,16 @@ export function ProdukFormPage() {
           {error}
         </div>
       )}
+      {!isEdit && (
+        <div className="mb-4">
+          <Button type="button" variant="outline" onClick={() => setPhotoScanModalOpen(true)}>
+            Isi dari foto (barcode + nama + jenis)
+          </Button>
+          <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+            Foto kemasan produk → ekstrak barcode, nama, dan kategori. Harga isi belakangan.
+          </p>
+        </div>
+      )}
       <form onSubmit={handleSubmit}>
         <Card>
           <CardHeader>
@@ -406,6 +418,22 @@ export function ProdukFormPage() {
           </CardContent>
         </Card>
       </form>
+
+      <ProductPhotoScanModal
+        open={photoScanModalOpen}
+        onClose={() => setPhotoScanModalOpen(false)}
+        categories={categories}
+        onApply={(result, file) => {
+          setForm((f) => ({
+            ...f,
+            name: result.name,
+            barcode: result.barcode,
+            category_id: result.category_id,
+          }));
+          setImageFile(file);
+          setPhotoScanModalOpen(false);
+        }}
+      />
     </div>
   );
 }
