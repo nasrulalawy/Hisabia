@@ -62,6 +62,7 @@ export function BarcodeScanner({ open, onScan, onClose, lastError }: BarcodeScan
           muted
           playsInline
           autoPlay
+          style={{ transform: "scaleX(-1)" }}
         />
         <div className="absolute inset-0 border-4 border-dashed border-[var(--primary)]/50 pointer-events-none rounded-xl" />
       </div>
