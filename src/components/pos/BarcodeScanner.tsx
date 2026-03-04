@@ -18,7 +18,7 @@ const VIDEO_CONSTRAINTS: MediaTrackConstraints = {
   height: { ideal: 480, min: 240 },
 };
 
-const DECODE_HINTS = new Map([
+const DECODE_HINTS = new Map<DecodeHintType, unknown>([
   [
     DecodeHintType.POSSIBLE_FORMATS,
     [
