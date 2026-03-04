@@ -35,8 +35,18 @@ import { NeracaSaldoPage } from "@/pages/accounting/NeracaSaldoPage";
 import { TutupBukuPage } from "@/pages/accounting/TutupBukuPage";
 import { LaporanAgingPage } from "@/pages/accounting/LaporanAgingPage";
 import { DashboardKeuanganPage } from "@/pages/accounting/DashboardKeuanganPage";
+import { FixedAssetListPage } from "@/pages/accounting/FixedAssetListPage";
+import { FixedAssetFormPage } from "@/pages/accounting/FixedAssetFormPage";
+import { PenawaranListPage } from "@/pages/sales/PenawaranListPage";
+import { PenawaranFormPage } from "@/pages/sales/PenawaranFormPage";
+import { InvoiceListPage } from "@/pages/sales/InvoiceListPage";
+import { InvoiceFormPage } from "@/pages/sales/InvoiceFormPage";
+import { PengirimanListPage } from "@/pages/sales/PengirimanListPage";
+import { PengirimanFormPage } from "@/pages/sales/PengirimanFormPage";
 import { SubscriptionPage } from "@/pages/subscription/SubscriptionPage";
 import { PaymentSuccessPage } from "@/pages/subscription/PaymentSuccessPage";
+import { PaymentFinishPage } from "@/pages/subscription/PaymentFinishPage";
+import { SubscriptionPayPage } from "@/pages/subscription/SubscriptionPayPage";
 import { ShopPage } from "@/pages/shop/ShopPage";
 import { CatalogPage } from "@/pages/shop/CatalogPage";
 import { OrderDetailPage } from "@/pages/order/OrderDetailPage";
@@ -49,7 +59,11 @@ import { KreditSyariahDetailPage } from "@/pages/kredit-syariah/KreditSyariahDet
 import { KaryawanPage } from "@/pages/crud/KaryawanPage";
 import { KategoriKaryawanPage } from "@/pages/crud/KategoriKaryawanPage";
 import { DaftarPelanggan } from "@/pages/DaftarPelanggan";
-import { AdminDashboard } from "@/pages/admin/AdminDashboard";
+import { AdminLayout } from "@/pages/admin/AdminLayout";
+import { AdminDashboardPage } from "@/pages/admin/AdminDashboardPage";
+import { AdminOrganisationsPage } from "@/pages/admin/AdminOrganisationsPage";
+import { AdminPlansPage } from "@/pages/admin/AdminPlansPage";
+import { AdminOutletFeaturesPage } from "@/pages/admin/AdminOutletFeaturesPage";
 import { InstallPWA } from "@/components/InstallPWA";
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
@@ -59,10 +73,18 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   const location = useLocation();
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user: u } }) => {
-      setUser(u as { id: string } | null);
-      setLoading(false);
-    });
+    supabase.auth
+      .getUser()
+      .then(({ data: { user: u } }) => {
+        setUser(u as { id: string } | null);
+      })
+      .catch(() => {
+        // Koneksi gagal (timeout, offline, dll): anggap tidak ada session agar loading berhenti
+        setUser(null);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -152,7 +174,12 @@ export default function App() {
         <Route path="/katalog/:orgId" element={<CatalogPage />} />
         <Route path="/daftar-pelanggan" element={<DaftarPelanggan />} />
         <Route path="/order/:token" element={<OrderDetailPage />} />
-        <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/admin" element={<AdminLayout />}>
+          <Route index element={<AdminDashboardPage />} />
+          <Route path="organisations" element={<AdminOrganisationsPage />} />
+          <Route path="plans" element={<AdminPlansPage />} />
+          <Route path="outlet-features" element={<AdminOutletFeaturesPage />} />
+        </Route>
         <Route path="/org/:orgId" element={<OrgLayout />}>
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
@@ -166,9 +193,21 @@ export default function App() {
           <Route path="supplier" element={<SupplierPage />} />
           <Route path="pelanggan" element={<PelangganPage />} />
           <Route path="pos" element={<PosPage />} />
+          <Route path="penawaran" element={<PenawaranListPage />} />
+          <Route path="penawaran/tambah" element={<PenawaranFormPage />} />
+          <Route path="penawaran/:id/edit" element={<PenawaranFormPage />} />
+          <Route path="invoice-penjualan" element={<InvoiceListPage />} />
+          <Route path="invoice-penjualan/tambah" element={<InvoiceFormPage />} />
+          <Route path="invoice-penjualan/:id/edit" element={<InvoiceFormPage />} />
+          <Route path="pengiriman" element={<PengirimanListPage />} />
+          <Route path="pengiriman/tambah" element={<PengirimanFormPage />} />
+          <Route path="pengiriman/:id/edit" element={<PengirimanFormPage />} />
           <Route path="arus-kas" element={<ArusKasPage />} />
           <Route path="hutang-piutang" element={<HutangPiutangPage />} />
           <Route path="jurnal" element={<JurnalUmumPage />} />
+          <Route path="aset-tetap" element={<FixedAssetListPage />} />
+          <Route path="aset-tetap/tambah" element={<FixedAssetFormPage />} />
+          <Route path="aset-tetap/:id/edit" element={<FixedAssetFormPage />} />
           <Route path="neraca-saldo" element={<NeracaSaldoPage />} />
           <Route path="buku-besar" element={<BukuBesarPage />} />
           <Route path="neraca" element={<NeracaPage />} />
@@ -185,7 +224,9 @@ export default function App() {
           <Route path="gudang" element={<GudangPage />} />
           <Route path="outlets" element={<OutletsPage />} />
           <Route path="subscription" element={<SubscriptionPage />} />
+          <Route path="subscription/pay/:planId" element={<SubscriptionPayPage />} />
           <Route path="subscription/success" element={<PaymentSuccessPage />} />
+          <Route path="subscription/finish" element={<PaymentFinishPage />} />
           <Route path="toko" element={<TokoPage />} />
           <Route path="pengaturan-struk" element={<ReceiptSettingsPage />} />
           <Route path="integrasi" element={<IntegrasiPage />} />

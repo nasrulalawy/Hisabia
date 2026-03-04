@@ -24,7 +24,7 @@ Deno.serve(async (req) => {
 
     const { data: payment, error: payErr } = await admin
       .from("subscription_payments")
-      .select("id, organization_id, plan_id, amount")
+      .select("id, organization_id, plan_id, amount, status, billing_interval")
       .eq("order_id", orderId)
       .single();
 
@@ -35,28 +35,46 @@ Deno.serve(async (req) => {
       });
     }
 
-    const isSuccess = status === "capture" && (fraudStatus === "accept" || !fraudStatus);
+    const isSuccess =
+      status === "settlement" ||
+      (status === "capture" && (fraudStatus === "accept" || !fraudStatus));
 
-    if (isSuccess) {
-      await admin.from("subscription_payments").update({
-        status: "paid",
-        midtrans_transaction_id: body.transaction_id,
-        paid_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }).eq("order_id", orderId);
+    if (isSuccess && payment.status !== "paid") {
+      await admin
+        .from("subscription_payments")
+        .update({
+          status: "paid",
+          midtrans_transaction_id: body.transaction_id,
+          paid_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("order_id", orderId);
 
       const periodStart = new Date();
       const periodEnd = new Date();
-      periodEnd.setMonth(periodEnd.getMonth() + 1);
+      const isYearly = payment.billing_interval === "yearly";
+      if (isYearly) {
+        periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+      } else {
+        periodEnd.setMonth(periodEnd.getMonth() + 1);
+      }
 
-      await admin.from("subscriptions").upsert({
-        organization_id: payment.organization_id,
-        plan_id: payment.plan_id,
-        status: "active",
-        current_period_start: periodStart.toISOString(),
-        current_period_end: periodEnd.toISOString(),
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "organization_id" });
+      await admin.from("subscriptions").upsert(
+        {
+          organization_id: payment.organization_id,
+          plan_id: payment.plan_id,
+          status: "active",
+          current_period_start: periodStart.toISOString(),
+          current_period_end: periodEnd.toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "organization_id" }
+      );
+
+      await admin
+        .from("organizations")
+        .update({ plan_id: payment.plan_id, updated_at: new Date().toISOString() })
+        .eq("id", payment.organization_id);
     }
 
     return new Response(JSON.stringify({ received: true }), {

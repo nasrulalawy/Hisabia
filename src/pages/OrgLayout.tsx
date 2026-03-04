@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, Outlet, useNavigate, useParams } from "react-router-dom";
+import { Link, Outlet, useNavigate, useParams, useLocation } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
@@ -104,9 +104,12 @@ export function OrgLayout() {
         .select("status, current_period_end")
         .eq("organization_id", orgId)
         .maybeSingle();
-      const isTrialing = sub?.status === "trialing";
       const periodEnd = sub?.current_period_end ? new Date(sub.current_period_end) : null;
-      setTrialExpired(!!(isTrialing && periodEnd && periodEnd < new Date()));
+      const now = new Date();
+      // Paket dianggap habis jika period_end sudah lewat (trialing/active/past_due) atau status canceled
+      const periodExpired = !!(sub && periodEnd && periodEnd < now);
+      const subscriptionExpired = periodExpired || sub?.status === "canceled";
+      setTrialExpired(!!subscriptionExpired);
 
       const { data: grantsData } = await supabase
         .from("organization_feature_grants")
@@ -177,11 +180,50 @@ export function OrgLayout() {
   }
 
   const basePath = `/org/${orgId}`;
+  const location = useLocation();
+  const isPosPage = location.pathname === `${basePath}/pos`;
+  const isSubscriptionPage = location.pathname === `${basePath}/subscription`;
 
   const currentOutlet =
     outlets?.find((o) => o.id === currentOutletId) ?? outlets?.[0] ?? null;
   const currentOutletType: import("@/lib/database.types").OutletType =
     currentOutlet?.outlet_type ?? "mart";
+
+  // POS: full-screen tanpa sidebar & header (page baru) — blokir jika paket expired
+  if (isPosPage) {
+    if (trialExpired) {
+      return (
+        <div className="flex h-screen flex-col items-center justify-center gap-4 bg-[var(--background)] p-4">
+          <p className="text-center font-medium text-amber-800">Masa berlaku paket telah berakhir.</p>
+          <Link
+            to={`${basePath}/subscription`}
+            className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700"
+          >
+            Ke halaman Langganan
+          </Link>
+        </div>
+      );
+    }
+    return (
+      <OrgProvider
+        value={{
+          orgId,
+          outlets: outlets ?? [],
+          currentOutletId,
+          currentOutlet,
+          currentOutletType,
+          outletFeaturePermissions,
+          organizationFeatureGrants,
+          currentEmployee,
+          employeeFeaturePermissions,
+        }}
+      >
+        <div className="flex h-screen flex-col overflow-hidden bg-[var(--background)]">
+          <Outlet />
+        </div>
+      </OrgProvider>
+    );
+  }
 
   return (
     <OrgProvider
@@ -215,21 +257,21 @@ export function OrgLayout() {
             orgId={orgId}
             onMenuClick={() => setSidebarMobileOpen(true)}
           />
-        <main className="flex-1 overflow-auto p-4 sm:p-6">
-          {trialExpired && (
-            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800">
-              <p className="font-medium">Masa trial 14 hari telah berakhir.</p>
-              <p className="mt-1 text-sm">Upgrade ke paket Pro minimal untuk melanjutkan menggunakan Hisabia.</p>
-              <Link
-                to={`${basePath}/subscription`}
-                className="mt-2 inline-block rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700"
-              >
-                Upgrade Sekarang →
-              </Link>
-            </div>
-          )}
-          <Outlet />
-        </main>
+          <main className="flex-1 overflow-auto p-4 sm:p-6">
+            {trialExpired && !isSubscriptionPage && (
+              <div className="flex flex-col items-center justify-center rounded-xl border border-amber-200 bg-amber-50 p-8 text-center text-amber-800">
+                <p className="text-lg font-semibold">Masa berlaku paket telah berakhir</p>
+                <p className="mt-2 text-sm">Perpanjang atau upgrade paket untuk melanjutkan menggunakan Hisabia.</p>
+                <Link
+                  to={`${basePath}/subscription`}
+                  className="mt-4 inline-block rounded-lg bg-amber-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-amber-700"
+                >
+                  Ke halaman Langganan →
+                </Link>
+              </div>
+            )}
+            <Outlet />
+          </main>
         </div>
       </div>
     </OrgProvider>

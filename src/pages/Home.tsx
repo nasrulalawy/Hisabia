@@ -1,5 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
+import { supabase } from "@/lib/supabase";
+import { formatIdr } from "@/lib/utils";
+import type { SubscriptionPlan } from "@/lib/database.types";
 
 
 // Nav items (mirror referensi: Produk, Solusi, Harga, dll)
@@ -87,6 +90,19 @@ function IconPath({ d }: { d: string }) {
 export function Home() {
   const [activeFeature, setActiveFeature] = useState("keuangan");
   const [openFaq, setOpenFaq] = useState<number | null>(0);
+  const [landingPlans, setLandingPlans] = useState<SubscriptionPlan[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("subscription_plans")
+        .select("*")
+        .order("sort_order", { ascending: true });
+      const list = (data as SubscriptionPlan[] | null) ?? [];
+      // Paket utama saja (bukan addon), yang show_on_landing
+      setLandingPlans(list.filter((p) => p.show_on_landing !== false && p.is_addon !== true));
+    })();
+  }, []);
 
   return (
     <div className="min-h-screen bg-white text-[#1a1a2e]">
@@ -392,11 +408,75 @@ export function Home() {
         </div>
       </section>
 
+      {/* ========== HARGA (pricing dinamis dari subscription_plans) ========== */}
+      <section id="cta" className="scroll-mt-20 bg-[#f8fafc] py-14">
+        <div className="mx-auto max-w-6xl px-6">
+          <h2 className="text-center text-2xl font-bold text-[#1a1a2e] sm:text-3xl">
+            Pilih Paket yang Tepat
+          </h2>
+          <p className="mx-auto mt-2 max-w-xl text-center text-[#5f6368]">
+            Mulai gratis trial 14 hari. Tanpa kartu kredit. Batal kapan saja.
+          </p>
+          {landingPlans.length > 0 ? (
+            <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              {landingPlans.map((plan) => {
+                const features = Array.isArray(plan.features) ? (plan.features as string[]) : [];
+                return (
+                  <div
+                    key={plan.id}
+                    className="flex flex-col rounded-2xl border border-[#e8eaed] bg-white p-6 shadow-sm transition hover:shadow-md"
+                  >
+                    <h3 className="text-lg font-bold text-[#1a1a2e]">{plan.name}</h3>
+                    <p className="mt-1 text-sm text-[#5f6368]">{plan.description ?? ""}</p>
+                    <div className="mt-4">
+                      <span className="text-2xl font-bold text-[#1D8B7A]">
+                        {plan.price_monthly === 0 ? "Gratis" : formatIdr(plan.price_monthly)}
+                      </span>
+                      {plan.price_monthly > 0 && (
+                        <span className="ml-1 text-sm text-[#5f6368]">/ bulan</span>
+                      )}
+                    </div>
+                    <ul className="mt-4 flex-1 space-y-2 text-sm text-[#5f6368]">
+                      {features.map((f, i) => (
+                        <li key={i} className="flex items-start gap-2">
+                          <span className="mt-0.5 text-[#1D8B7A]" aria-hidden>✓</span>
+                          <span>{f}</span>
+                        </li>
+                      ))}
+                      <li className="flex items-start gap-2">
+                        <span className="mt-0.5 text-[#1D8B7A]" aria-hidden>✓</span>
+                        <span>Hingga {plan.outlet_limit} outlet, {plan.member_limit} member</span>
+                      </li>
+                    </ul>
+                    <Link
+                      to="/register"
+                      className="mt-6 block w-full rounded-xl bg-[#1D8B7A] py-3 text-center font-semibold text-white transition hover:bg-[#177a6b]"
+                    >
+                      Mulai Sekarang
+                    </Link>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="mt-10 text-center text-[#5f6368]">
+              <p>Paket sedang disiapkan. Silakan hubungi kami.</p>
+              <a
+                href="tel:+6285156514096"
+                className="mt-4 inline-block rounded-xl bg-[#1D8B7A] px-6 py-3 font-semibold text-white hover:bg-[#177a6b]"
+              >
+                Hubungi Sales
+              </a>
+            </div>
+          )}
+        </div>
+      </section>
+
       {/* ========== CTA BAND (pre-footer dark) ========== */}
-      <section id="cta" className="scroll-mt-20 bg-[#0d3d36] py-14">
+      <section className="bg-[#0d3d36] py-10">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-6 px-6 sm:flex-row">
           <div>
-            <h2 className="text-2xl font-bold text-white sm:text-3xl">
+            <h2 className="text-xl font-bold text-white sm:text-2xl">
               Butuh solusi untuk kelola bisnis Anda?
             </h2>
             <p className="mt-2 text-white/90">

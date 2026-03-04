@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
 import { formatIdr, getStockStatus, getStockStatusLabel } from "@/lib/utils";
@@ -109,6 +110,9 @@ function getCashDenominationOptions(total: number): number[] {
 
 export function PosPage() {
   const { orgId, currentOutletId, currentOutlet, currentOutletType, currentEmployee } = useOrg();
+  const location = useLocation();
+  const params = useParams<{ orgId: string }>();
+  const isPosFullScreen = location.pathname === `/org/${params.orgId}/pos`;
   const [products, setProducts] = useState<ProductWithCategory[]>([]);
   const [productMeta, setProductMeta] = useState<Record<string, ProductMeta>>({});
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
@@ -1009,43 +1013,90 @@ export function PosPage() {
 
   if (!currentOutletId) {
     return (
-      <div className="flex min-h-[400px] items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--background)]">
-        <p className="text-[var(--muted-foreground)]">Pilih outlet terlebih dahulu di header.</p>
+      <div className="flex min-h-0 flex-1 flex-col">
+        {isPosFullScreen && (
+          <div className="flex shrink-0 items-center justify-end border-b border-[var(--border)] bg-[var(--background)] px-3 py-2">
+            <Link
+              to={`/org/${orgId}/dashboard`}
+              className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium hover:bg-[var(--muted)]"
+            >
+              Tutup
+            </Link>
+          </div>
+        )}
+        <div className="flex min-h-[400px] flex-1 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--background)]">
+          <p className="text-[var(--muted-foreground)]">Pilih outlet terlebih dahulu di header.</p>
+        </div>
       </div>
     );
   }
 
   if (currentOutletType === "gudang") {
     return (
-      <div className="flex min-h-[400px] flex-col items-center justify-center gap-4 rounded-xl border border-[var(--border)] bg-[var(--background)] p-8">
-        <p className="text-center text-[var(--muted-foreground)]">
-          POS hanya tersedia untuk outlet Mart, F&B, atau Barbershop.
-        </p>
-        <p className="text-center text-sm text-[var(--muted-foreground)]">
-          Ganti outlet di header ke toko/outlet penjualan untuk menggunakan POS.
-        </p>
+      <div className="flex min-h-0 flex-1 flex-col">
+        {isPosFullScreen && (
+          <div className="flex shrink-0 items-center justify-end border-b border-[var(--border)] bg-[var(--background)] px-3 py-2">
+            <Link
+              to={`/org/${orgId}/dashboard`}
+              className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium hover:bg-[var(--muted)]"
+            >
+              Tutup
+            </Link>
+          </div>
+        )}
+        <div className="flex min-h-[400px] flex-1 flex-col items-center justify-center gap-4 rounded-xl border border-[var(--border)] bg-[var(--background)] p-8">
+          <p className="text-center text-[var(--muted-foreground)]">
+            POS hanya tersedia untuk outlet Mart, F&B, atau Barbershop.
+          </p>
+          <p className="text-center text-sm text-[var(--muted-foreground)]">
+            Ganti outlet di dashboard lalu buka POS lagi.
+          </p>
+        </div>
       </div>
     );
   }
 
   if (shiftLoading) {
     return (
-      <div className="flex min-h-[400px] items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--background)]">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
+      <div className="flex min-h-0 flex-1 flex-col">
+        {isPosFullScreen && (
+          <div className="flex shrink-0 items-center justify-end border-b border-[var(--border)] bg-[var(--background)] px-3 py-2">
+            <Link
+              to={`/org/${orgId}/dashboard`}
+              className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium hover:bg-[var(--muted)]"
+            >
+              Tutup
+            </Link>
+          </div>
+        )}
+        <div className="flex min-h-[400px] flex-1 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--background)]">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
+        </div>
       </div>
     );
   }
 
   if (!activeShift) {
     return (
-      <div className="flex min-h-[400px] flex-col items-center justify-center gap-6 rounded-xl border border-[var(--border)] bg-[var(--background)] p-8">
-        <p className="text-center text-[var(--muted-foreground)]">
-          Buka shift terlebih dahulu untuk memulai transaksi.
-        </p>
-        <Button onClick={() => setOpenShiftModal(true)} size="lg">
-          Buka Shift
-        </Button>
-        <Modal
+      <div className="flex min-h-0 flex-1 flex-col">
+        {isPosFullScreen && (
+          <div className="flex shrink-0 items-center justify-end border-b border-[var(--border)] bg-[var(--background)] px-3 py-2">
+            <Link
+              to={`/org/${orgId}/dashboard`}
+              className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium hover:bg-[var(--muted)]"
+            >
+              Tutup
+            </Link>
+          </div>
+        )}
+        <div className="flex min-h-[400px] flex-1 flex-col items-center justify-center gap-6 rounded-xl border border-[var(--border)] bg-[var(--background)] p-8">
+          <p className="text-center text-[var(--muted-foreground)]">
+            Buka shift terlebih dahulu untuk memulai transaksi.
+          </p>
+          <Button onClick={() => setOpenShiftModal(true)} size="lg">
+            Buka Shift
+          </Button>
+          <Modal
           open={openShiftModal}
           onClose={() => setOpenShiftModal(false)}
           title="Buka Shift"
@@ -1089,12 +1140,26 @@ export function PosPage() {
             </div>
           </form>
         </Modal>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-[calc(100vh-6rem)] min-h-0 flex-col gap-3 sm:h-[calc(100vh-8rem)] sm:gap-4">
+    <div className={`flex min-h-0 flex-col gap-3 sm:gap-4 ${isPosFullScreen ? "h-full" : "h-[calc(100vh-6rem)] sm:h-[calc(100vh-8rem)]"}`}>
+      {isPosFullScreen && (
+        <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--background)] px-3 py-2">
+          <span className="text-sm font-medium text-[var(--foreground)]">
+            {currentOutlet?.name ?? "POS"}
+          </span>
+          <Link
+            to={`/org/${orgId}/dashboard`}
+            className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium hover:bg-[var(--muted)]"
+          >
+            Tutup
+          </Link>
+        </div>
+      )}
       <div className="flex flex-col gap-2 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:px-4">
         <div className="flex flex-wrap items-center gap-2 sm:gap-4">
           <span className="rounded-full bg-emerald-100 px-3 py-1 text-sm font-medium text-emerald-700">

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
 import { formatIdr, formatDate } from "@/lib/utils";
@@ -7,10 +7,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import type { SubscriptionPlan } from "@/lib/database.types";
-
-const MIDTRANS_SNAP_URL = import.meta.env.VITE_MIDTRANS_IS_PRODUCTION === "true"
-  ? "https://app.midtrans.com/snap/snap.js"
-  : "https://app.sandbox.midtrans.com/snap/snap.js";
 
 interface SubscriptionWithPlan {
   id: string;
@@ -22,11 +18,10 @@ interface SubscriptionWithPlan {
 
 export function SubscriptionPage() {
   const { orgId } = useOrg();
-  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [subscription, setSubscription] = useState<SubscriptionWithPlan | null>(null);
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
-  const [payLoading, setPayLoading] = useState<string | null>(null);
+  const [addonPlans, setAddonPlans] = useState<SubscriptionPlan[]>([]);
   const [outletCount, setOutletCount] = useState(0);
   const [memberCount, setMemberCount] = useState(0);
 
@@ -40,12 +35,16 @@ export function SubscriptionPage() {
         .select("*, subscription_plans(*)")
         .eq("organization_id", orgId)
         .maybeSingle(),
-      supabase.from("subscription_plans").select("*").order("price_monthly"),
+      supabase.from("subscription_plans").select("*").order("sort_order", { ascending: true }),
       supabase.from("outlets").select("*", { count: "exact", head: true }).eq("organization_id", orgId),
       supabase.from("organization_members").select("*", { count: "exact", head: true }).eq("organization_id", orgId),
-    ]).then(([subRes, plansRes, outletsRes, membersRes]) => {
+      supabase.from("organization_addon_plans").select("plan_id").eq("organization_id", orgId),
+    ]).then(([subRes, plansRes, outletsRes, membersRes, addonsRes]) => {
       setSubscription(subRes.data as SubscriptionWithPlan | null);
-      setPlans(plansRes.data ?? []);
+      const allPlans = (plansRes.data ?? []) as SubscriptionPlan[];
+      setPlans(allPlans.filter((p) => !(p as SubscriptionPlan & { is_addon?: boolean }).is_addon));
+      const addonIds = (addonsRes.data ?? []).map((r: { plan_id: string }) => r.plan_id);
+      setAddonPlans(allPlans.filter((p) => addonIds.includes(p.id)));
       setOutletCount(outletsRes.count ?? 0);
       setMemberCount(membersRes.count ?? 0);
       setLoading(false);
@@ -58,11 +57,11 @@ export function SubscriptionPage() {
   const canAddOutlet = outletCount < outletLimit;
   const canAddMember = memberCount < memberLimit;
 
-  const isTrialing = subscription?.status === "trialing";
   const periodEnd = subscription?.current_period_end ? new Date(subscription.current_period_end) : null;
-  const trialExpired = !!(isTrialing && periodEnd && periodEnd < new Date());
-
-  const clientKey = import.meta.env.VITE_MIDTRANS_CLIENT_KEY;
+  const now = new Date();
+  const periodExpired = !!(subscription && periodEnd && periodEnd < now) || subscription?.status === "canceled";
+  const isTrialing = subscription?.status === "trialing";
+  const trialExpired = periodExpired;
 
   const loadSubscription = useCallback(() => {
     if (!orgId) return;
@@ -73,98 +72,6 @@ export function SubscriptionPage() {
       .maybeSingle()
       .then(({ data }) => setSubscription(data as SubscriptionWithPlan | null));
   }, [orgId]);
-
-  async function handlePay(plan: SubscriptionPlan) {
-    if (!orgId) return;
-    if (!clientKey) {
-      alert("Konfigurasi pembayaran (Midtrans) belum diatur. Hubungi admin untuk mengaktifkan VITE_MIDTRANS_CLIENT_KEY.");
-      return;
-    }
-    const amount = Number(plan.price_monthly) || 0;
-    if (amount < 1) return;
-    setPayLoading(plan.id);
-    try {
-      const { data, error } = await supabase.functions.invoke("create-subscription-order", {
-        body: { organization_id: orgId, plan_id: plan.id },
-      });
-      if (error) throw new Error(error.message || "Gagal membuat order");
-      const json = data as { snapToken?: string; redirectUrl?: string; error?: string };
-      if (json?.error) throw new Error(json.error);
-      const snapToken = json?.snapToken;
-      const redirectUrl = json?.redirectUrl;
-      if (!snapToken) throw new Error("Token tidak diterima");
-
-      const snap = (window as unknown as { snap?: { pay: (t: string, o?: object) => void } }).snap;
-      if (typeof snap?.pay === "function") {
-        snap.pay(snapToken, {
-          onSuccess: () => {
-            loadSubscription();
-            setPayLoading(null);
-            navigate(`/org/${orgId}/subscription/success`, {
-              state: { planName: plan.name, amount: Number(plan.price_monthly) },
-            });
-          },
-          onPending: () => {
-            loadSubscription();
-            setPayLoading(null);
-            navigate(`/org/${orgId}/subscription/success`, {
-              state: { planName: plan.name, amount: Number(plan.price_monthly), pending: true },
-            });
-          },
-          onError: () => {
-            setPayLoading(null);
-          },
-          onClose: () => setPayLoading(null),
-        });
-      } else {
-        // Snap script mungkin belum selesai dimuat; tunggu sebentar lalu coba lagi
-        await new Promise((r) => setTimeout(r, 2000));
-        const snapRetry = (window as unknown as { snap?: { pay: (t: string, o?: object) => void } }).snap;
-        if (typeof snapRetry?.pay === "function") {
-          snapRetry.pay(snapToken, {
-            onSuccess: () => {
-              loadSubscription();
-              setPayLoading(null);
-              navigate(`/org/${orgId}/subscription/success`, {
-                state: { planName: plan.name, amount: Number(plan.price_monthly) },
-              });
-            },
-            onPending: () => {
-              loadSubscription();
-              setPayLoading(null);
-              navigate(`/org/${orgId}/subscription/success`, {
-                state: { planName: plan.name, amount: Number(plan.price_monthly), pending: true },
-              });
-            },
-            onError: () => setPayLoading(null),
-            onClose: () => setPayLoading(null),
-          });
-        } else {
-          const url = redirectUrl ?? (() => {
-            const baseUrl = import.meta.env.VITE_MIDTRANS_IS_PRODUCTION === "true"
-              ? "https://app.midtrans.com"
-              : "https://app.sandbox.midtrans.com";
-            return `${baseUrl}/snap/v2/vtweb/${snapToken}`;
-          })();
-          window.location.href = url;
-          setPayLoading(null);
-        }
-      }
-    } catch (err) {
-      alert((err as Error).message);
-      setPayLoading(null);
-    }
-  }
-
-  useEffect(() => {
-    if (!clientKey) return;
-    if (document.querySelector('script[src*="midtrans.com/snap"]')) return;
-    const s = document.createElement("script");
-    s.src = MIDTRANS_SNAP_URL;
-    s.setAttribute("data-client-key", clientKey);
-    s.async = true;
-    document.head.appendChild(s);
-  }, [clientKey]);
 
   if (loading) {
     return (
@@ -191,15 +98,12 @@ export function SubscriptionPage() {
             <p className="mt-4 text-sm text-amber-600">
               Aplikasi gratis hanya selama 14 hari trial. Setelah itu wajib berlangganan.
             </p>
-            {plans.length > 0 && (
-              <Button
-                type="button"
-                className="mt-4 cursor-pointer"
-                onClick={() => handlePay(plans[0])}
-                disabled={!!payLoading || !clientKey || Number(plans[0]?.price_monthly) < 1}
-              >
-                {payLoading ? "Memproses..." : "Bayar Paket Basic"}
-              </Button>
+            {plans.length > 0 && Number(plans[0]?.price_monthly) >= 1 && (
+              <Link to={`/org/${orgId}/subscription/pay/${plans[0].id}`}>
+                <Button type="button" className="mt-4 cursor-pointer">
+                  Bayar Paket Basic
+                </Button>
+              </Link>
             )}
           </CardContent>
         </Card>
@@ -211,7 +115,7 @@ export function SubscriptionPage() {
             <CardTitle>Paket Saat Ini</CardTitle>
             <Badge
               variant={
-                trialExpired
+                periodExpired
                   ? "warning"
                   : subscription.status === "active" || subscription.status === "trialing"
                     ? "success"
@@ -220,8 +124,8 @@ export function SubscriptionPage() {
                       : "default"
               }
             >
-              {trialExpired
-                ? "Trial Berakhir"
+              {periodExpired
+                ? "Masa berlaku habis"
                 : subscription.status === "active"
                   ? "Aktif"
                   : subscription.status === "trialing"
@@ -238,9 +142,30 @@ export function SubscriptionPage() {
             </div>
             <div className="flex flex-wrap gap-6 text-sm">
               <div>
-                <span className="text-[var(--muted-foreground)]">Harga:</span>{" "}
+                <span className="text-[var(--muted-foreground)]">Paket:</span>{" "}
                 {currentPlan ? formatIdr(Number(currentPlan.price_monthly)) : "—"} / bulan
               </div>
+              {addonPlans.length > 0 && (
+                <>
+                  <div>
+                    <span className="text-[var(--muted-foreground)]">Addon:</span>{" "}
+                    {addonPlans.map((p) => p.name).join(", ")} ({addonPlans.map((p) => formatIdr(Number(p.price_monthly))).join(" + ")})
+                  </div>
+                  <div className="font-medium">
+                    <span className="text-[var(--muted-foreground)]">Total:</span>{" "}
+                    {formatIdr(
+                      Number(currentPlan?.price_monthly ?? 0) + addonPlans.reduce((s, p) => s + Number(p.price_monthly ?? 0), 0)
+                    )}{" "}
+                    / bulan
+                  </div>
+                </>
+              )}
+              {addonPlans.length === 0 && (
+                <div>
+                  <span className="text-[var(--muted-foreground)]">Total:</span>{" "}
+                  {currentPlan ? formatIdr(Number(currentPlan.price_monthly)) : "—"} / bulan
+                </div>
+              )}
               <div>
                 <span className="text-[var(--muted-foreground)]">Limit Outlet:</span>{" "}
                 {outletLimit === 999 ? "Unlimited" : outletLimit}
@@ -262,11 +187,18 @@ export function SubscriptionPage() {
                 )}
               </div>
             </div>
-            <div className="flex gap-6 text-sm text-[var(--muted-foreground)]">
+            <div className="flex flex-wrap items-center gap-4 text-sm text-[var(--muted-foreground)]">
               <div>
                 Periode: {formatDate(subscription.current_period_start)} —{" "}
                 {formatDate(subscription.current_period_end)}
               </div>
+              {periodExpired && currentPlan && Number(currentPlan.price_monthly) >= 1 && (
+                <Link to={`/org/${orgId}/subscription/pay/${currentPlan.id}`}>
+                  <Button type="button" variant="primary" size="sm" className="cursor-pointer">
+                    Perpanjang paket
+                  </Button>
+                </Link>
+              )}
             </div>
             {Array.isArray(currentPlan?.features) && currentPlan.features.length > 0 && (
               <div>
@@ -294,11 +226,6 @@ export function SubscriptionPage() {
 
       <div>
         <h3 className="mb-4 text-lg font-semibold text-[var(--foreground)]">Paket Tersedia</h3>
-        {!clientKey && (
-          <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
-            Konfigurasi pembayaran (Midtrans) belum diatur. Tombol Bayar akan aktif setelah admin mengatur VITE_MIDTRANS_CLIENT_KEY di environment.
-          </p>
-        )}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {plans.map((plan) => {
             const isCurrent = currentPlan?.id === plan.id;
@@ -316,6 +243,17 @@ export function SubscriptionPage() {
                     {Number(plan.price_monthly) === 0 ? "Gratis" : formatIdr(Number(plan.price_monthly))}
                     <span className="text-sm font-normal text-[var(--muted-foreground)]">/bulan</span>
                   </p>
+                  {addonPlans.length > 0 && (
+                    <p className="text-sm text-[var(--muted-foreground)]">
+                      Total (paket + addon):{" "}
+                      <span className="font-medium text-[var(--foreground)]">
+                        {formatIdr(
+                          Number(plan.price_monthly ?? 0) + addonPlans.reduce((s, p) => s + Number(p.price_monthly ?? 0), 0)
+                        )}
+                        /bulan
+                      </span>
+                    </p>
+                  )}
                   <p className="text-sm">
                     {plan.outlet_limit === 999 ? "Unlimited" : plan.outlet_limit} outlet
                     {" · "}
@@ -328,17 +266,19 @@ export function SubscriptionPage() {
                       ))}
                     </ul>
                   )}
+                  {isCurrent && periodExpired && Number(plan.price_monthly) >= 1 && (
+                    <Link to={`/org/${orgId}/subscription/pay/${plan.id}`} className="block w-full">
+                      <Button type="button" variant="primary" size="sm" className="w-full cursor-pointer">
+                        Perpanjang paket
+                      </Button>
+                    </Link>
+                  )}
                   {!isCurrent && Number(plan.price_monthly) > 0 && (
-                    <Button
-                      type="button"
-                      variant="primary"
-                      size="sm"
-                      className="w-full cursor-pointer"
-                      disabled={!!payLoading || !clientKey}
-                      onClick={() => handlePay(plan)}
-                    >
-                      {payLoading === plan.id ? "Memproses..." : "Bayar Sekarang"}
-                    </Button>
+                    <Link to={`/org/${orgId}/subscription/pay/${plan.id}`} className="block w-full">
+                      <Button type="button" variant="primary" size="sm" className="w-full cursor-pointer">
+                        Bayar Sekarang
+                      </Button>
+                    </Link>
                   )}
                 </CardContent>
               </Card>

@@ -1,0 +1,6 @@
+# Konfigurasi Edge Functions.
+# Dipakai saat deploy lewat Supabase CLI (mis. nanti dari WSL atau mesin lain).
+# Untuk deploy hanya lewat Dashboard, matikan "Enforce JWT Verification" di tab Details function.
+
+[functions.create-subscription-order]
+verify_jwt = false

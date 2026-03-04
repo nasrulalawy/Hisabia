@@ -31,7 +31,12 @@ export function ProdukFormPage() {
     stock: "0",
     barcode: "",
     is_available: true,
+    image_url: "",
   });
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageUploading, setImageUploading] = useState(false);
+  const MAX_IMAGE_SIZE = 2 * 1024 * 1024;
+  const BUCKET = "product_images";
 
   async function fetchOptions() {
     if (!baseOrgId) return;
@@ -75,7 +80,53 @@ export function ProdukFormPage() {
       stock: fmt(data.stock ?? 0),
       barcode: data.barcode ?? "",
       is_available: data.is_available ?? true,
+      image_url: data.image_url ?? "",
     });
+  }
+
+  async function uploadProductImage(orgId: string, productId: string, file: File): Promise<string | null> {
+    const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
+    const path = `${orgId}/${productId}/image.${ext}`;
+    const { error } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: true });
+    if (error) {
+      setError(error.message);
+      return null;
+    }
+    const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+    return data.publicUrl;
+  }
+
+  async function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > MAX_IMAGE_SIZE) {
+      setError("Ukuran gambar maksimal 2 MB.");
+      return;
+    }
+    const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    if (!allowed.includes(file.type)) {
+      setError("Format hanya JPEG, PNG, WebP, atau GIF.");
+      return;
+    }
+    setError(null);
+    if (isEdit && productId && baseOrgId) {
+      setImageUploading(true);
+      const url = await uploadProductImage(baseOrgId, productId, file);
+      setImageUploading(false);
+      if (url) {
+        setForm((f) => ({ ...f, image_url: url }));
+        setImageFile(null);
+      }
+    } else {
+      setImageFile(file);
+      setForm((f) => ({ ...f, image_url: "" }));
+    }
+    e.target.value = "";
+  }
+
+  function clearImage() {
+    setImageFile(null);
+    setForm((f) => ({ ...f, image_url: "" }));
   }
 
   useEffect(() => {
@@ -106,6 +157,7 @@ export function ProdukFormPage() {
       stock: parsePriceIdr(form.stock) || 0,
       barcode: form.barcode.trim() || null,
       is_available: form.is_available,
+      image_url: form.image_url.trim() || null,
     };
     if (isEdit) {
       const { error: err } = await supabase
@@ -130,6 +182,15 @@ export function ProdukFormPage() {
             conversion_to_base: 1,
             is_base: true,
           });
+        }
+        if (imageFile) {
+          const url = await uploadProductImage(baseOrgId, inserted.id, imageFile);
+          if (url) {
+            await supabase
+              .from("products")
+              .update({ image_url: url, updated_at: new Date().toISOString() })
+              .eq("id", inserted.id);
+          }
         }
         navigate(`/org/${baseOrgId}/produk/${inserted.id}`);
       } else {
@@ -187,6 +248,42 @@ export function ProdukFormPage() {
                 rows={2}
                 className="h-20 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
               />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Gambar produk (maks. 1, 2 MB)</label>
+              <div className="flex flex-wrap items-start gap-4">
+                {(form.image_url || imageFile) && (
+                  <div className="relative">
+                    <img
+                      src={imageFile ? URL.createObjectURL(imageFile) : form.image_url}
+                      alt="Preview"
+                      className="h-28 w-28 rounded-lg border border-[var(--border)] object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={clearImage}
+                      disabled={imageUploading}
+                      className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--background)] text-xs hover:bg-[var(--muted)]"
+                      aria-label="Hapus gambar"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+                <div className="flex flex-col gap-1">
+                  <label className="cursor-pointer rounded-lg border border-[var(--border)] bg-[var(--muted)]/30 px-3 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)]/50">
+                    {imageUploading ? "Mengunggah..." : form.image_url || imageFile ? "Ganti gambar" : "Pilih gambar"}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      className="hidden"
+                      onChange={handleImageChange}
+                      disabled={imageUploading}
+                    />
+                  </label>
+                  <p className="text-xs text-[var(--muted-foreground)]">JPEG, PNG, WebP atau GIF. Maksimal 2 MB.</p>
+                </div>
+              </div>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>

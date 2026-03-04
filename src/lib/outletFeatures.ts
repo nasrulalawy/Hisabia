@@ -14,6 +14,9 @@ export type OutletFeatureKey =
   | "dashboard"
   | "kategori"
   | "produk"
+  | "bahan"
+  | "product_ingredients"
+  | "product_variants"
   | "satuan"
   | "supplier"
   | "pelanggan"
@@ -40,13 +43,18 @@ export type OutletFeatureKey =
   | "subscription"
   | "laporan_harian"
   | "karyawan"
-  | "kategori_karyawan";
+  | "kategori_karyawan"
+  | "aset_tetap"
+  | "penawaran"
+  | "invoice_penjualan"
+  | "pengiriman";
 
 /** Mapping dari href (path sidebar) ke feature_key */
 export const ROUTE_TO_FEATURE_KEY: Record<string, OutletFeatureKey> = {
   dashboard: "dashboard",
   kategori: "kategori",
   produk: "produk",
+  bahan: "bahan",
   satuan: "satuan",
   supplier: "supplier",
   pelanggan: "pelanggan",
@@ -75,6 +83,10 @@ export const ROUTE_TO_FEATURE_KEY: Record<string, OutletFeatureKey> = {
   karyawan: "karyawan",
   "kategori-karyawan": "kategori_karyawan",
   "pengaturan-struk": "toko",
+  "aset-tetap": "aset_tetap",
+  penawaran: "penawaran",
+  "invoice-penjualan": "invoice_penjualan",
+  pengiriman: "pengiriman",
 };
 
 /** Daftar semua fitur untuk admin UI (key, label) */
@@ -82,6 +94,9 @@ export const OUTLET_FEATURE_LIST: { key: OutletFeatureKey; label: string }[] = [
   { key: "dashboard", label: "Dashboard" },
   { key: "kategori", label: "Kategori" },
   { key: "produk", label: "Produk" },
+  { key: "bahan", label: "Bahan (master)" },
+  { key: "product_ingredients", label: "Resep produk (HPP dari bahan)" },
+  { key: "product_variants", label: "Variant produk" },
   { key: "satuan", label: "Satuan" },
   { key: "supplier", label: "Supplier" },
   { key: "pelanggan", label: "Pelanggan" },
@@ -109,6 +124,10 @@ export const OUTLET_FEATURE_LIST: { key: OutletFeatureKey; label: string }[] = [
   { key: "laporan_harian", label: "Laporan Harian" },
   { key: "karyawan", label: "Karyawan" },
   { key: "kategori_karyawan", label: "Kategori Karyawan" },
+  { key: "aset_tetap", label: "Aset Tetap" },
+  { key: "penawaran", label: "Penawaran" },
+  { key: "invoice_penjualan", label: "Invoice Penjualan" },
+  { key: "pengiriman", label: "Pengiriman" },
 ];
 
 const DEFAULT_PERMISSION: OutletFeaturePermission = {
@@ -146,8 +165,18 @@ export function canReadFeature(
 ): boolean {
   const key = ROUTE_TO_FEATURE_KEY[href];
   if (!key) return true;
-  if (!permissions || !permissions[key]) return true;
-  return permissions[key].can_read;
+  return canReadFeatureByKey(key, permissions);
+}
+
+/**
+ * Cek akses read by feature_key (untuk sub-fitur tanpa route sendiri, mis. product_ingredients di halaman produk).
+ */
+export function canReadFeatureByKey(
+  featureKey: OutletFeatureKey,
+  permissions: Record<string, OutletFeaturePermission> | null
+): boolean {
+  if (!permissions || !permissions[featureKey]) return true;
+  return permissions[featureKey].can_read;
 }
 
 export function getFeaturePermission(

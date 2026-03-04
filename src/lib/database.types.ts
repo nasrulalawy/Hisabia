@@ -1,17 +1,38 @@
 export type OrgRole = "owner" | "admin" | "cashier" | "member";
 export type SubscriptionStatus = "trialing" | "active" | "past_due" | "canceled";
 
+export interface PlanFeaturePermission {
+  can_create: boolean;
+  can_read: boolean;
+  can_update: boolean;
+  can_delete: boolean;
+}
+
 export interface SubscriptionPlan {
   id: string;
   name: string;
   slug: string;
   description: string | null;
   price_monthly: number;
+  price_yearly?: number | null;
   outlet_limit: number;
   member_limit: number;
   features: unknown;
+  feature_permissions?: Record<string, PlanFeaturePermission> | null;
+  show_on_landing?: boolean;
+  sort_order?: number;
+  is_addon?: boolean;
+  addon_feature_key?: string | null;
+  addon_feature_keys?: string[] | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface OrganizationAddonPlan {
+  id: string;
+  organization_id: string;
+  plan_id: string;
+  created_at: string;
 }
 
 export interface Profile {
@@ -467,5 +488,116 @@ export interface JournalEntryLine {
   debit: number;
   credit: number;
   memo: string | null;
+  created_at: string;
+}
+
+export interface FixedAsset {
+  id: string;
+  organization_id: string;
+  code: string;
+  name: string;
+  purchase_date: string;
+  purchase_value: number;
+  residual_value: number;
+  useful_life_months: number;
+  depreciation_method: string;
+  account_asset_code: string;
+  account_accumulated_code: string;
+  account_expense_code: string;
+  status: "active" | "sold" | "disposed";
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FixedAssetDepreciation {
+  id: string;
+  fixed_asset_id: string;
+  period_date: string;
+  amount: number;
+  journal_entry_id: string | null;
+  created_at: string;
+}
+
+export type SalesQuoteStatus = "draft" | "sent" | "accepted" | "rejected";
+export type SalesInvoiceStatus = "draft" | "sent" | "paid" | "overdue" | "canceled";
+export type SalesDeliveryStatus = "pending" | "partial" | "delivered";
+
+export interface SalesQuote {
+  id: string;
+  organization_id: string;
+  number: string;
+  customer_id: string;
+  quote_date: string;
+  valid_until: string | null;
+  status: SalesQuoteStatus;
+  subtotal: number;
+  tax: number;
+  total: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SalesQuoteLine {
+  id: string;
+  sales_quote_id: string;
+  product_id: string | null;
+  unit_id: string | null;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  amount: number;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface SalesInvoice {
+  id: string;
+  organization_id: string;
+  number: string;
+  sales_quote_id: string | null;
+  customer_id: string;
+  invoice_date: string;
+  due_date: string | null;
+  status: SalesInvoiceStatus;
+  subtotal: number;
+  tax: number;
+  total: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SalesInvoiceLine {
+  id: string;
+  sales_invoice_id: string;
+  product_id: string | null;
+  unit_id: string | null;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  amount: number;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface SalesDelivery {
+  id: string;
+  organization_id: string;
+  number: string;
+  sales_invoice_id: string;
+  delivery_date: string;
+  status: SalesDeliveryStatus;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SalesDeliveryLine {
+  id: string;
+  sales_delivery_id: string;
+  sales_invoice_line_id: string;
+  quantity_delivered: number;
   created_at: string;
 }
