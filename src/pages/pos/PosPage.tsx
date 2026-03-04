@@ -1320,7 +1320,7 @@ export function PosPage() {
                 <span className="ml-4 font-medium">Total Penjualan:</span> {formatIdr(total)}
               </div>
               <div>
-                <span className="text-[var(--muted-foreground)]">Kasir</span> {currentEmployee?.full_name ?? "—"} · Total Item = {cart.length}
+                <span className="text-[var(--muted-foreground)]">Kasir</span> {currentEmployee?.name ?? "—"} · Total Item = {cart.length}
               </div>
             </div>
           </div>
