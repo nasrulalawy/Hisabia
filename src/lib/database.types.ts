@@ -289,6 +289,15 @@ export interface ProductPrice {
   updated_at: string;
 }
 
+/** Multiple barcode per product: scan any → same product. */
+export interface ProductBarcode {
+  id: string;
+  organization_id: string;
+  product_id: string;
+  barcode: string;
+  created_at: string;
+}
+
 export interface CashFlow {
   id: string;
   organization_id: string;

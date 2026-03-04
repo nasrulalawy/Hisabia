@@ -184,7 +184,6 @@ export function ProductPhotoScanModal({
                     playsInline
                     muted
                     className="h-full w-full object-contain"
-                    style={{ transform: "scaleX(-1)" }}
                   />
                   <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-2">
                     <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>

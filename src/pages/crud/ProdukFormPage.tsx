@@ -30,10 +30,11 @@ export function ProdukFormPage() {
     cost_price: "0",
     selling_price: "0",
     stock: "0",
-    barcode: "",
     is_available: true,
     image_url: "",
   });
+  /** Multiple barcode: scan mana saja → produk ini. */
+  const [barcodes, setBarcodes] = useState<string[]>([]);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imageUploading, setImageUploading] = useState(false);
   const [photoScanModalOpen, setPhotoScanModalOpen] = useState(false);
@@ -58,11 +59,11 @@ export function ProdukFormPage() {
 
   async function fetchProduct() {
     if (!productId) return;
-    const { data, error: err } = await supabase
-      .from("products")
-      .select("*")
-      .eq("id", productId)
-      .single();
+    const [prodRes, barcodeRes] = await Promise.all([
+      supabase.from("products").select("*").eq("id", productId).single(),
+      supabase.from("product_barcodes").select("barcode").eq("product_id", productId).order("barcode"),
+    ]);
+    const { data, error: err } = prodRes;
     if (err || !data) {
       setError(err?.message ?? "Produk tidak ditemukan");
       return;
@@ -80,10 +81,11 @@ export function ProdukFormPage() {
       cost_price: fmt(data.cost_price ?? 0),
       selling_price: fmt(data.selling_price ?? 0),
       stock: fmt(data.stock ?? 0),
-      barcode: data.barcode ?? "",
       is_available: data.is_available ?? true,
       image_url: data.image_url ?? "",
     });
+    const list = (barcodeRes.data ?? []).map((r) => r.barcode).filter(Boolean);
+    setBarcodes(list.length ? list : (data.barcode ? [data.barcode] : []));
   }
 
   async function uploadProductImage(orgId: string, productId: string, file: File): Promise<string | null> {
@@ -147,6 +149,7 @@ export function ProdukFormPage() {
     if (!form.name.trim() || !baseOrgId) return;
     setSubmitLoading(true);
     setError(null);
+    const primaryBarcode = barcodes.map((b) => b.trim()).find(Boolean) ?? null;
     const payload = {
       organization_id: baseOrgId,
       name: form.name.trim(),
@@ -157,7 +160,7 @@ export function ProdukFormPage() {
       cost_price: parsePriceIdr(form.cost_price) || 0,
       selling_price: parsePriceIdr(form.selling_price) || 0,
       stock: parsePriceIdr(form.stock) || 0,
-      barcode: form.barcode.trim() || null,
+      barcode: primaryBarcode,
       is_available: form.is_available,
       image_url: form.image_url.trim() || null,
     };
@@ -166,8 +169,18 @@ export function ProdukFormPage() {
         .from("products")
         .update({ ...payload, updated_at: new Date().toISOString() })
         .eq("id", productId);
-      if (err) setError(err.message);
-      else navigate(`/org/${baseOrgId}/produk/${productId}`);
+      if (err) {
+        setError(err.message);
+      } else {
+        const toInsert = barcodes.map((b) => b.trim()).filter(Boolean);
+        await supabase.from("product_barcodes").delete().eq("product_id", productId);
+        if (toInsert.length > 0) {
+          await supabase.from("product_barcodes").insert(
+            toInsert.map((barcode) => ({ organization_id: baseOrgId, product_id: productId, barcode }))
+          );
+        }
+        navigate(`/org/${baseOrgId}/produk/${productId}`);
+      }
     } else {
       const { data: inserted, error: insertErr } = await supabase
         .from("products")
@@ -184,6 +197,12 @@ export function ProdukFormPage() {
             conversion_to_base: 1,
             is_base: true,
           });
+        }
+        const toInsert = barcodes.map((b) => b.trim()).filter(Boolean);
+        if (toInsert.length > 0) {
+          await supabase.from("product_barcodes").insert(
+            toInsert.map((barcode) => ({ organization_id: baseOrgId, product_id: inserted.id, barcode }))
+          );
         }
         if (imageFile) {
           const url = await uploadProductImage(baseOrgId, inserted.id, imageFile);
@@ -367,16 +386,42 @@ export function ProdukFormPage() {
               </div>
             </div>
             <div>
-              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Barcode / SKU (untuk scan di POS)</label>
-              <Input
-                type="text"
-                value={form.barcode}
-                onChange={(e) => setForm((f) => ({ ...f, barcode: e.target.value }))}
-                placeholder="Kosongkan jika tidak pakai scan"
-              />
-              <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                Isi barcode atau SKU produk. Unik per toko. Dipakai untuk scan kamera di POS.
+              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Barcode / SKU (bisa banyak)</label>
+              <p className="mb-2 text-xs text-[var(--muted-foreground)]">
+                Scan salah satu barcode di POS → produk ini. Tambah beberapa jika satu produk punya banyak kode (kemasan berbeda, dll).
               </p>
+              <div className="space-y-2">
+                {barcodes.map((b, i) => (
+                  <div key={i} className="flex gap-2">
+                    <Input
+                      type="text"
+                      value={b}
+                      onChange={(e) =>
+                        setBarcodes((prev) => prev.map((x, j) => (j === i ? e.target.value : x)))
+                      }
+                      placeholder="Kode barcode / SKU"
+                      className="flex-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setBarcodes((prev) => prev.filter((_, j) => j !== i))}
+                      aria-label="Hapus barcode"
+                    >
+                      Hapus
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setBarcodes((prev) => [...prev, ""])}
+                >
+                  + Tambah barcode
+                </Button>
+              </div>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
@@ -427,9 +472,13 @@ export function ProdukFormPage() {
           setForm((f) => ({
             ...f,
             name: result.name,
-            barcode: result.barcode,
             category_id: result.category_id,
           }));
+          if (result.barcode.trim()) {
+            setBarcodes((prev) =>
+              prev.some((b) => b.trim() === result.barcode.trim()) ? prev : [...prev, result.barcode.trim()]
+            );
+          }
           setImageFile(file);
           setPhotoScanModalOpen(false);
         }}

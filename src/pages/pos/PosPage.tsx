@@ -114,6 +114,8 @@ export function PosPage() {
   const params = useParams<{ orgId: string }>();
   const isPosFullScreen = location.pathname === `/org/${params.orgId}/pos`;
   const [products, setProducts] = useState<ProductWithCategory[]>([]);
+  /** Map barcode (lowercase) → product id. Sumber: product_barcodes + products.barcode fallback. */
+  const [barcodeToProductId, setBarcodeToProductId] = useState<Record<string, string>>({});
   const [productMeta, setProductMeta] = useState<Record<string, ProductMeta>>({});
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -310,10 +312,26 @@ export function PosPage() {
       if (prodsErr) {
         console.error("POS fetch products:", prodsErr);
         setProducts([]);
+        setBarcodeToProductId({});
         setProductMeta({});
       } else {
         const prodsList = (prods as unknown as ProductWithCategory[]) ?? [];
         setProducts(prodsList);
+
+        const { data: barcodeRows } = await supabase
+          .from("product_barcodes")
+          .select("product_id, barcode")
+          .eq("organization_id", orgId);
+        const map: Record<string, string> = {};
+        (barcodeRows ?? []).forEach((r: { product_id: string; barcode: string }) => {
+          const code = String(r.barcode).trim().toLowerCase();
+          if (code) map[code] = r.product_id;
+        });
+        prodsList.forEach((p) => {
+          const b = p.barcode != null ? String(p.barcode).trim() : "";
+          if (b && !map[b.toLowerCase()]) map[b.toLowerCase()] = p.id;
+        });
+        setBarcodeToProductId(map);
 
         const ids = prodsList.map((p) => p.id);
         let meta: Record<string, ProductMeta> = {};
@@ -695,9 +713,8 @@ export function PosPage() {
   function addToCartByBarcode(barcode: string): boolean {
     const code = barcode.trim();
     if (!code) return false;
-    const product = products.find(
-      (p) => p.barcode != null && String(p.barcode).trim() !== "" && String(p.barcode).trim().toLowerCase() === code.toLowerCase()
-    );
+    const productId = barcodeToProductId[code.toLowerCase()];
+    const product = productId ? products.find((p) => p.id === productId) : undefined;
     if (!product) return false;
     if (!product.is_available) return false;
     const units = getUnitsForProduct(product);
@@ -736,9 +753,8 @@ export function PosPage() {
     setScanError(null);
     const code = barcode.trim();
     if (!code) return;
-    const product = products.find(
-      (p) => p.barcode != null && String(p.barcode).trim() !== "" && String(p.barcode).trim().toLowerCase() === code.toLowerCase()
-    );
+    const productId = barcodeToProductId[code.toLowerCase()];
+    const product = productId ? products.find((p) => p.id === productId) : undefined;
     if (!product) {
       setScanError(`Produk dengan barcode "${code}" tidak ditemukan. Isi barcode di data produk.`);
       return;
