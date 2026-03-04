@@ -731,6 +731,7 @@ export function PosPage() {
     return true;
   }
 
+  /** Sama seperti ketik barcode + Enter: terdeteksi = langsung masuk keranjang, modal tetap terbuka untuk scan berikutnya. */
   function handleBarcodeScan(barcode: string) {
     setScanError(null);
     const code = barcode.trim();
@@ -747,8 +748,8 @@ export function PosPage() {
       return;
     }
     addToCartByBarcode(code);
-    setScanModalOpen(false);
     setScanError(null);
+    // Modal tidak ditutup: seperti scanner fisik, scan lagi = item berikutnya
   }
 
   function handleSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {

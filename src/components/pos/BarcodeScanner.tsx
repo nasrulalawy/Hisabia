@@ -8,7 +8,14 @@ interface BarcodeScannerProps {
   lastError?: string | null;
 }
 
-const SCAN_COOLDOWN_MS = 2000;
+/** Cooldown per barcode agar tidak double-trigger (sama seperti scanner fisik: satu scan = satu enter). */
+const SCAN_COOLDOWN_MS = 800;
+
+const VIDEO_CONSTRAINTS: MediaTrackConstraints = {
+  facingMode: "environment",
+  width: { ideal: 1280, min: 640 },
+  height: { ideal: 720, min: 480 },
+};
 
 export function BarcodeScanner({ open, onScan, onClose, lastError }: BarcodeScannerProps) {
   const lastScanned = useRef<string | null>(null);
@@ -31,8 +38,8 @@ export function BarcodeScanner({ open, onScan, onClose, lastError }: BarcodeScan
     onResult: handleResult,
     onError: () => {},
     paused: !open,
-    timeBetweenDecodingAttempts: 300,
-    constraints: { video: { facingMode: "environment" } },
+    timeBetweenDecodingAttempts: 200,
+    constraints: { video: VIDEO_CONSTRAINTS },
   });
 
   useEffect(() => {
@@ -46,15 +53,15 @@ export function BarcodeScanner({ open, onScan, onClose, lastError }: BarcodeScan
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-[var(--muted-foreground)]">
-        Arahkan kamera ke barcode/QR produk. Produk akan otomatis masuk keranjang.
+        Arahkan kamera ke barcode. Saat terdeteksi, produk langsung masuk keranjang (sama seperti scanner fisik).
       </p>
-      <div className="relative aspect-square max-h-[50vh] w-full overflow-hidden rounded-xl bg-black">
+      <div className="relative aspect-square max-h-[55vh] w-full overflow-hidden rounded-xl bg-black">
         <video
           ref={ref}
-          className="h-full w-full object-cover"
+          className="h-full w-full object-contain"
           muted
           playsInline
-          style={{ transform: "scaleX(-1)" }}
+          autoPlay
         />
         <div className="absolute inset-0 border-4 border-dashed border-[var(--primary)]/50 pointer-events-none rounded-xl" />
       </div>
