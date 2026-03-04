@@ -1,6 +1,5 @@
 import { useRef, useCallback, useEffect } from "react";
 import { useZxing } from "react-zxing";
-import { BarcodeFormat, DecodeHintType } from "@zxing/library";
 
 interface BarcodeScannerProps {
   open: boolean;
@@ -12,27 +11,10 @@ interface BarcodeScannerProps {
 /** Cooldown per barcode agar tidak double-trigger (sama seperti scanner fisik: satu scan = satu enter). */
 const SCAN_COOLDOWN_MS = 800;
 
+/** Pakai constraint minimal agar kamera jalan di lebih banyak device; resolusi dipilih browser. */
 const VIDEO_CONSTRAINTS: MediaTrackConstraints = {
   facingMode: "environment",
-  width: { ideal: 640, min: 320 },
-  height: { ideal: 480, min: 240 },
 };
-
-const DECODE_HINTS = new Map<DecodeHintType, unknown>([
-  [
-    DecodeHintType.POSSIBLE_FORMATS,
-    [
-      BarcodeFormat.EAN_13,
-      BarcodeFormat.EAN_8,
-      BarcodeFormat.CODE_128,
-      BarcodeFormat.CODE_39,
-      BarcodeFormat.UPC_A,
-      BarcodeFormat.UPC_E,
-      BarcodeFormat.QR_CODE,
-    ],
-  ],
-  [DecodeHintType.TRY_HARDER, true],
-]);
 
 export function BarcodeScanner({ open, onScan, onClose, lastError }: BarcodeScannerProps) {
   const lastScanned = useRef<string | null>(null);
@@ -55,8 +37,7 @@ export function BarcodeScanner({ open, onScan, onClose, lastError }: BarcodeScan
     onResult: handleResult,
     onError: () => {},
     paused: !open,
-    hints: DECODE_HINTS,
-    timeBetweenDecodingAttempts: 100,
+    timeBetweenDecodingAttempts: 150,
     constraints: { video: VIDEO_CONSTRAINTS },
   });
 
@@ -76,6 +57,8 @@ export function BarcodeScanner({ open, onScan, onClose, lastError }: BarcodeScan
       <div className="relative aspect-square max-h-[55vh] w-full overflow-hidden rounded-xl bg-black">
         <video
           ref={ref}
+          width={640}
+          height={480}
           className="h-full w-full object-contain"
           muted
           playsInline

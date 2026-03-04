@@ -55,7 +55,7 @@ const PRICE_TYPES = [
 
 export function ProdukDetailPage() {
   const { orgId, id: productId } = useParams<{ orgId: string; id: string }>();
-  const { orgId: ctxOrgId, currentOutletType } = useOrg();
+  const { orgId: ctxOrgId } = useOrg();
   const navigate = useNavigate();
   const baseOrgId = orgId ?? ctxOrgId;
 
@@ -392,7 +392,6 @@ export function ProdukDetailPage() {
         </CardContent>
       </Card>
 
-      {currentOutletType === "fnb" && (
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Multi Harga</CardTitle>
@@ -440,7 +439,6 @@ export function ProdukDetailPage() {
           )}
         </CardContent>
       </Card>
-      )}
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">

@@ -1495,6 +1495,7 @@ export function PosPage() {
         size="lg"
       >
         <BarcodeScanner
+          key={scanModalOpen ? "open" : "closed"}
           open={scanModalOpen}
           onScan={handleBarcodeScan}
           onClose={() => { setScanModalOpen(false); setScanError(null); }}
