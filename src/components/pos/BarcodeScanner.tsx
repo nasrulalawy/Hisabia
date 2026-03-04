@@ -1,5 +1,6 @@
 import { useRef, useCallback, useEffect } from "react";
 import { useZxing } from "react-zxing";
+import { BarcodeFormat, DecodeHintType } from "@zxing/library";
 
 interface BarcodeScannerProps {
   open: boolean;
@@ -13,9 +14,25 @@ const SCAN_COOLDOWN_MS = 800;
 
 const VIDEO_CONSTRAINTS: MediaTrackConstraints = {
   facingMode: "environment",
-  width: { ideal: 1280, min: 640 },
-  height: { ideal: 720, min: 480 },
+  width: { ideal: 640, min: 320 },
+  height: { ideal: 480, min: 240 },
 };
+
+const DECODE_HINTS = new Map([
+  [
+    DecodeHintType.POSSIBLE_FORMATS,
+    [
+      BarcodeFormat.EAN_13,
+      BarcodeFormat.EAN_8,
+      BarcodeFormat.CODE_128,
+      BarcodeFormat.CODE_39,
+      BarcodeFormat.UPC_A,
+      BarcodeFormat.UPC_E,
+      BarcodeFormat.QR_CODE,
+    ],
+  ],
+  [DecodeHintType.TRY_HARDER, true],
+]);
 
 export function BarcodeScanner({ open, onScan, onClose, lastError }: BarcodeScannerProps) {
   const lastScanned = useRef<string | null>(null);
@@ -38,7 +55,8 @@ export function BarcodeScanner({ open, onScan, onClose, lastError }: BarcodeScan
     onResult: handleResult,
     onError: () => {},
     paused: !open,
-    timeBetweenDecodingAttempts: 200,
+    hints: DECODE_HINTS,
+    timeBetweenDecodingAttempts: 100,
     constraints: { video: VIDEO_CONSTRAINTS },
   });
 

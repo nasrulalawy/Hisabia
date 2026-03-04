@@ -765,7 +765,7 @@ export function PosPage() {
     }
     addToCartByBarcode(code);
     setScanError(null);
-    // Modal tidak ditutup: seperti scanner fisik, scan lagi = item berikutnya
+    setScanModalOpen(false);
   }
 
   function handleSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
