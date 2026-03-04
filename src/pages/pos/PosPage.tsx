@@ -1193,6 +1193,24 @@ export function PosPage() {
       <div className="flex min-h-0 flex-1 flex-col gap-3 md:flex-row md:gap-4">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--background)]">
         <div className="shrink-0 border-b border-[var(--border)] p-3 sm:p-4">
+          <div className="mb-3">
+            <label className="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Pelanggan</label>
+            <select
+              value={selectedCustomerId ?? ""}
+              onChange={(e) => setSelectedCustomerId(e.target.value || null)}
+              className="h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+            >
+              <option value="">— Tanpa pelanggan —</option>
+              {customers.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+            {selectedCustomerId && (
+              <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                Harga mengikuti multi harga pelanggan ini (jika ada).
+              </p>
+            )}
+          </div>
           <div className="mb-3 flex gap-2">
             <Input
               placeholder="Cari produk atau scan barcode (ketik kode + Enter)"
