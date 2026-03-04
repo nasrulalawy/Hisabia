@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { PasswordInput } from "@/components/ui/PasswordInput";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 
 export function Register() {
@@ -76,9 +77,8 @@ export function Register() {
               <label htmlFor="password" className="mb-1 block text-sm font-medium text-[var(--foreground)]">
                 Kata sandi
               </label>
-              <Input
+              <PasswordInput
                 id="password"
-                type="password"
                 placeholder="Min. 6 karakter"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

@@ -31,6 +31,7 @@ import {
   type LabelElementLine,
   type NiimbotLabelFieldId,
 } from "@/lib/niimbot";
+import { getPosLayout, setPosLayout, type PosLayoutType } from "@/lib/posLayout";
 
 export function TokoPage() {
   const { orgId } = useOrg();
@@ -51,6 +52,7 @@ export function TokoPage() {
   const [receiptBleConnected, setReceiptBleConnected] = useState(false);
   const [receiptBleConnecting, setReceiptBleConnecting] = useState(false);
   const [receiptBleConnError, setReceiptBleConnError] = useState<string | null>(null);
+  const [posLayout, setPosLayoutState] = useState<PosLayoutType>("default");
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const SAMPLE_PRODUCT = {
@@ -71,6 +73,10 @@ export function TokoPage() {
     setLocalPrintUrl(getReceiptLocalUrl());
     setLabelDesignState(getNiimbotLabelDesign());
   }, []);
+
+  useEffect(() => {
+    if (orgId) setPosLayoutState(getPosLayout(orgId));
+  }, [orgId]);
 
   useEffect(() => {
     const canvas = previewCanvasRef.current;
@@ -262,6 +268,55 @@ export function TokoPage() {
           {saving ? "Menyimpan..." : "Simpan"}
         </Button>
       </form>
+
+      <div className="max-w-md space-y-4 border-t border-[var(--border)] pt-6">
+        <h3 className="text-lg font-medium text-[var(--foreground)]">Tampilan POS</h3>
+        <p className="text-sm text-[var(--muted-foreground)]">
+          Pilih layout tampilan halaman Point of Sale. Perubahan berlaku setelah Anda membuka POS lagi.
+        </p>
+        <div className="flex flex-col gap-3">
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--border)] p-3 hover:bg-[var(--muted)]/30">
+            <input
+              type="radio"
+              name="pos_layout"
+              checked={posLayout === "default"}
+              onChange={() => {
+                if (orgId) {
+                  setPosLayout(orgId, "default");
+                  setPosLayoutState("default");
+                }
+              }}
+              className="mt-1 h-4 w-4"
+            />
+            <div>
+              <span className="font-medium text-[var(--foreground)]">Default</span>
+              <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">
+                Grid produk + keranjang di kanan. Cocok untuk layar sentuh dan banyak produk.
+              </p>
+            </div>
+          </label>
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--border)] p-3 hover:bg-[var(--muted)]/30">
+            <input
+              type="radio"
+              name="pos_layout"
+              checked={posLayout === "classic"}
+              onChange={() => {
+                if (orgId) {
+                  setPosLayout(orgId, "classic");
+                  setPosLayoutState("classic");
+                }
+              }}
+              className="mt-1 h-4 w-4"
+            />
+            <div>
+              <span className="font-medium text-[var(--foreground)]">Klasik</span>
+              <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">
+                Tabel barang + total besar + modal pembayaran menonjol (Total / Bayar / Kembali).
+              </p>
+            </div>
+          </label>
+        </div>
+      </div>
 
       <div className="max-w-md space-y-4 border-t border-[var(--border)] pt-6">
         <h3 className="text-lg font-medium text-[var(--foreground)]">Cetak Struk</h3>

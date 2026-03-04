@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { PasswordInput } from "@/components/ui/PasswordInput";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 
 interface InviteInfo {
@@ -214,9 +215,8 @@ export function DaftarPelanggan() {
               <label htmlFor="password" className="mb-1 block text-sm font-medium text-[var(--foreground)]">
                 Kata sandi
               </label>
-              <Input
+              <PasswordInput
                 id="password"
-                type="password"
                 placeholder="Min. 6 karakter"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -229,9 +229,8 @@ export function DaftarPelanggan() {
               <label htmlFor="confirmPassword" className="mb-1 block text-sm font-medium text-[var(--foreground)]">
                 Konfirmasi kata sandi
               </label>
-              <Input
+              <PasswordInput
                 id="confirmPassword"
-                type="password"
                 placeholder="Ulangi kata sandi"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}

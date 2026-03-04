@@ -23,6 +23,7 @@ import {
   getReceiptSettings,
 } from "@/lib/receipt";
 import { printLabelNiimbot } from "@/lib/niimbot";
+import { getPosLayout } from "@/lib/posLayout";
 
 interface ProductUnitRow {
   id: string;
@@ -169,6 +170,9 @@ export function PosPage() {
   const [bluetoothPrintError, setBluetoothPrintError] = useState<string | null>(null);
   const [niimbotLabelPrinting, setNiimbotLabelPrinting] = useState(false);
   const [niimbotLabelError, setNiimbotLabelError] = useState<string | null>(null);
+  const [classicAddQty, setClassicAddQty] = useState(1);
+
+  const posLayout = getPosLayout(orgId ?? undefined);
 
   useEffect(() => {
     if (cart.length === 0) setSelectedCartIndex(null);
@@ -711,9 +715,9 @@ export function PosPage() {
   }
 
   /** Menambah produk ke keranjang berdasarkan barcode/kode. Returns true jika berhasil. */
-  function addToCartByBarcode(barcode: string): boolean {
+  function addToCartByBarcode(barcode: string, qty = 1): boolean {
     const code = barcode.trim();
-    if (!code) return false;
+    if (!code || qty < 1) return false;
     const productId = barcodeToProductId[code.toLowerCase()];
     const product = productId ? products.find((p) => p.id === productId) : undefined;
     if (!product) return false;
@@ -730,7 +734,7 @@ export function PosPage() {
       conversionToBase: first.conversion_to_base ?? 1,
       name: product.name,
       price,
-      qty: 1,
+      qty,
       replaceVariantId: null,
       addonVariantIds: [],
       addonVariantNames: [],
@@ -740,7 +744,7 @@ export function PosPage() {
     if (existing) {
       setCart(
         cart.map((c) =>
-          cartItemKey(c) === cartItemKey(noVariantItem) ? { ...c, qty: c.qty + 1 } : c
+          cartItemKey(c) === cartItemKey(noVariantItem) ? { ...c, qty: c.qty + qty } : c
         )
       );
     } else {
@@ -774,7 +778,8 @@ export function PosPage() {
     const code = search.trim();
     if (!code) return;
     e.preventDefault();
-    if (addToCartByBarcode(code)) {
+    const qty = posLayout === "classic" ? classicAddQty : 1;
+    if (addToCartByBarcode(code, qty)) {
       setSearch("");
     }
   }
@@ -1191,6 +1196,163 @@ export function PosPage() {
           Tutup Shift
         </Button>
       </div>
+      {posLayout === "classic" ? (
+      <div className="flex min-h-0 flex-1 flex-col gap-3 md:flex-row md:gap-4">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--background)]">
+          <div className="shrink-0 space-y-3 border-b border-[var(--border)] p-3 sm:p-4">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
+              <div>
+                <span className="text-[var(--muted-foreground)]">Pelanggan [F4]</span>
+                <div className="mt-0.5">
+                  <SearchableSelect
+                    options={customers.map((c) => ({ value: c.id, label: c.name }))}
+                    value={selectedCustomerId ?? ""}
+                    onChange={(v) => setSelectedCustomerId(v || null)}
+                    placeholder="RETIL"
+                    emptyLabel="—"
+                    className="!min-h-8"
+                  />
+                </div>
+              </div>
+              <div>
+                <span className="text-[var(--muted-foreground)]">No. Transaksi</span>
+                <p className="mt-0.5 font-medium">{activeShift?.id?.slice(0, 8) ?? "—"}</p>
+              </div>
+              <div>
+                <span className="text-[var(--muted-foreground)]">Tanggal</span>
+                <p className="mt-0.5 font-medium">{new Date().toLocaleDateString("id-ID")}</p>
+              </div>
+              <div>
+                <span className="text-[var(--muted-foreground)]">Keterangan</span>
+                <p className="mt-0.5 font-medium">Penjualan POS</p>
+              </div>
+              <div>
+                <span className="text-[var(--muted-foreground)]">Dept</span>
+                <p className="mt-0.5 font-medium">Default Dept</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-4">
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4 rounded" defaultChecked /> History</label>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4 rounded" defaultChecked /> Tunai</label>
+            </div>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <label className="mb-0.5 block text-xs text-[var(--muted-foreground)]">Barcode Scanner atau Kode Barang [F2]</label>
+                <Input
+                  placeholder="Scan atau ketik kode + Enter"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onKeyDown={handleSearchKeyDown}
+                  className="min-h-9"
+                />
+              </div>
+              <div className="w-20">
+                <label className="mb-0.5 block text-xs text-[var(--muted-foreground)]">Qty [F3]</label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={classicAddQty}
+                  onChange={(e) => setClassicAddQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                  className="min-h-9"
+                />
+              </div>
+              <div className="flex items-end">
+                <Button type="button" variant="outline" size="sm" onClick={() => { setScanError(null); setScanModalOpen(true); }} className="min-h-9" title="Scan barcode">
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg>
+                </Button>
+              </div>
+            </div>
+          </div>
+          <div className="flex-1 overflow-auto p-3">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-[var(--border)] bg-[var(--muted)]/50">
+                  <th className="p-2 text-left font-medium">Kode Barang</th>
+                  <th className="p-2 text-left font-medium">Nama Barang</th>
+                  <th className="p-2 text-right font-medium">Jumlah</th>
+                  <th className="p-2 text-center font-medium">Satuan</th>
+                  <th className="p-2 text-right font-medium">Stok</th>
+                  <th className="p-2 text-right font-medium">Harga</th>
+                  <th className="p-2 text-right font-medium">Total</th>
+                  <th className="w-8" />
+                </tr>
+              </thead>
+              <tbody>
+                {cart.length === 0 ? (
+                  <tr><td colSpan={8} className="p-4 text-center text-[var(--muted-foreground)]">Keranjang kosong. Scan barcode atau ketik kode + Enter.</td></tr>
+                ) : (
+                  cart.map((item, index) => {
+                    const prod = products.find((p) => p.id === item.productId);
+                    const isSelected = selectedCartIndex === index;
+                    return (
+                      <tr
+                        key={cartItemKey(item)}
+                        className={`border-b border-[var(--border)] ${isSelected ? "bg-[var(--primary)]/10" : ""}`}
+                        onClick={() => setSelectedCartIndex(index)}
+                      >
+                        <td className="p-2 font-mono text-xs">{item.productId.slice(0, 8)}</td>
+                        <td className="p-2">{cartItemDisplayName(item)}</td>
+                        <td className="p-2 text-right">{item.qty}</td>
+                        <td className="p-2 text-center">{item.unitSymbol}</td>
+                        <td className="p-2 text-right">{prod ? Number(prod.stock ?? 0) : "—"}</td>
+                        <td className="p-2 text-right">{formatIdr(item.price)}</td>
+                        <td className="p-2 text-right font-medium">{formatIdr(item.price * item.qty)}</td>
+                        <td className="p-2">
+                          <div className="flex gap-1">
+                            <button type="button" onClick={(e) => { e.stopPropagation(); updateQty(item, -1); }} className="rounded border border-[var(--border)] px-1.5 py-0.5 text-xs hover:bg-[var(--muted)]">−</button>
+                            <button type="button" onClick={(e) => { e.stopPropagation(); updateQty(item, 1); }} className="rounded border border-[var(--border)] px-1.5 py-0.5 text-xs hover:bg-[var(--muted)]">+</button>
+                            <button type="button" onClick={(e) => { e.stopPropagation(); removeCartItem(item); }} className="rounded border border-red-200 px-1.5 py-0.5 text-xs text-red-600 hover:bg-red-50">Hapus</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="shrink-0 border-t border-[var(--border)] p-3 text-sm">
+            <div className="flex flex-wrap justify-between gap-4">
+              <div>
+                <span className="text-[var(--muted-foreground)]">Sub Total:</span> {formatIdr(subtotal)}
+                <span className="ml-4 text-[var(--muted-foreground)]">Total Pajak:</span> 0
+                <span className="ml-4 text-[var(--muted-foreground)]">Total Service:</span> 0
+                <span className="ml-4 font-medium">Total Penjualan:</span> {formatIdr(total)}
+              </div>
+              <div>
+                <span className="text-[var(--muted-foreground)]">Kasir</span> {currentEmployee?.full_name ?? "—"} · Total Item = {cart.length}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="flex w-full min-w-0 flex-shrink-0 flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--background)] md:max-h-full md:w-80">
+          <div className="shrink-0 border-b border-[var(--border)] bg-[var(--muted)]/30 p-4">
+            <p className="text-center text-xs font-medium uppercase text-[var(--muted-foreground)]">Total</p>
+            <p className="text-center text-3xl font-bold text-emerald-600">{formatIdr(total)}</p>
+          </div>
+          <div className="flex flex-1 flex-col justify-between p-4">
+            <div>
+              <p className="text-sm text-[var(--muted-foreground)]">Harga / Total</p>
+              <p className="mt-1 font-semibold">{formatIdr(total)}</p>
+              <p className="mt-4 text-sm text-[var(--muted-foreground)]">Sisa Piutang</p>
+              <p className="text-lg font-semibold">0</p>
+            </div>
+            <Button className="mt-4 h-12 w-full text-base" onClick={openCheckoutModal} disabled={cart.length === 0} title="Enter">
+              Pembayaran
+            </Button>
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-[var(--border)] bg-[var(--muted)]/30 px-3 py-2">
+          <Button variant="outline" size="sm" onClick={() => cart.length > 0 && (setCart([]), setSelectedCartIndex(null))} disabled={cart.length === 0}>
+            [F12] Batal
+          </Button>
+          <Link to={`/org/${orgId}/dashboard`} className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm hover:bg-[var(--muted)]">
+            [F6] Tutup
+          </Link>
+          <span className="ml-2 text-xs text-[var(--muted-foreground)]">Cari: ketik kode + Enter</span>
+        </div>
+      </div>
+      ) : (
       <div className="flex min-h-0 flex-1 flex-col gap-3 md:flex-row md:gap-4">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--background)]">
         <div className="shrink-0 border-b border-[var(--border)] p-3 sm:p-4">
@@ -1503,6 +1665,7 @@ export function PosPage() {
         </div>
       </div>
       </div>
+      )}
 
       <Modal
         open={scanModalOpen}
@@ -1708,9 +1871,117 @@ export function PosPage() {
       <Modal
         open={checkoutModalOpen}
         onClose={closeCheckoutModal}
-        title="Bayar"
-        size="sm"
+        title={posLayout === "classic" ? "Pembayaran" : "Bayar"}
+        size={posLayout === "classic" ? "lg" : "sm"}
       >
+        {posLayout === "classic" ? (
+        <div className="space-y-4">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" className="h-4 w-4 rounded" /> Gunakan Poin
+          </label>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div className="rounded-lg bg-[var(--muted)]/50 p-3 text-sm">
+              <p className="text-[var(--muted-foreground)]">Sub Total</p>
+              <p className="font-semibold">{formatIdr(subtotal)}</p>
+            </div>
+            <div className="rounded-lg bg-[var(--muted)]/50 p-3 text-sm">
+              <p className="text-[var(--muted-foreground)]">Biaya Lain [F5]</p>
+              <p className="font-semibold">0</p>
+            </div>
+            <div className="rounded-lg bg-[var(--muted)]/50 p-3 text-sm">
+              <p className="text-[var(--muted-foreground)]">Diskon -[F6]</p>
+              <p className="font-semibold">{formatIdr(discountAmount)}</p>
+            </div>
+            <div className="rounded-lg bg-[var(--muted)]/50 p-3 text-sm">
+              <p className="text-[var(--muted-foreground)]">Total Pajak / Service</p>
+              <p className="font-semibold">0</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-4">
+            <div>
+              <label className="mb-1 block text-xs text-[var(--muted-foreground)]">Diskon (Rp)</label>
+              <CurrencyInput value={discount || 0} onChangeValue={(v: number) => setDiscount(v || 0)} className="w-32" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-[var(--muted-foreground)]">Metode</label>
+              <select
+                value={paymentMethod}
+                onChange={(e) => {
+                  setPaymentMethod(e.target.value);
+                  if (e.target.value === "cash") setCashReceived(debtMode === "partial" ? Math.min(payNow, total) : total);
+                  else setCashReceived(0);
+                }}
+                className="h-9 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 text-sm"
+              >
+                <option value="cash">Tunai</option>
+                <option value="transfer">Transfer</option>
+                <option value="qris">QRIS</option>
+                <option value="card">Kartu</option>
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="rounded-xl bg-emerald-600 px-4 py-5 text-center">
+              <p className="text-sm font-medium text-emerald-100">Total</p>
+              <p className="text-2xl font-bold text-white sm:text-3xl">{formatIdr(total)}</p>
+            </div>
+            <div className="rounded-xl bg-blue-600 px-4 py-5 text-center">
+              <p className="text-sm font-medium text-blue-100">Bayar</p>
+              <p className="text-2xl font-bold text-white sm:text-3xl">{formatIdr(cashReceived)}</p>
+            </div>
+            <div className="rounded-xl bg-amber-500 px-4 py-5 text-center">
+              <p className="text-sm font-medium text-amber-100">Kembali</p>
+              <p className="text-2xl font-bold text-white sm:text-3xl">
+                {formatIdr(Math.max(0, cashReceived - (debtMode === "partial" ? Math.min(payNow, total) : total)))}
+              </p>
+            </div>
+          </div>
+          <p className="text-center text-sm text-[var(--muted-foreground)]">Tekan ENTER untuk melanjutkan. [F7]</p>
+          <div>
+            <label className="mb-1 block text-xs text-[var(--muted-foreground)]">Nominal (Rp)</label>
+            <CurrencyInput
+              value={cashReceived}
+              onChangeValue={(v: number) => {
+                setCashReceived(Math.max(0, v ?? 0));
+                if (debtMode === "partial") setPayNow(Math.min(total, Math.max(0, v ?? 0)));
+              }}
+              className="text-lg"
+            />
+          </div>
+          {selectedCustomerId && (
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => { setDebtMode(null); setPayNow(0); setCashReceived(total); }}
+                className={`rounded-lg border px-3 py-2 text-sm ${!debtMode ? "border-[var(--primary)] bg-[var(--primary)] text-white" : "border-[var(--border)]"}`}
+              >Bayar penuh</button>
+              <button
+                type="button"
+                onClick={() => { setDebtMode("full"); setPayNow(0); setCashReceived(0); }}
+                className={`rounded-lg border px-3 py-2 text-sm ${debtMode === "full" ? "border-[var(--primary)] bg-[var(--primary)] text-white" : "border-[var(--border)]"}`}
+              >Hutang semua</button>
+              <button
+                type="button"
+                onClick={() => { setDebtMode("partial"); setPayNow(Math.floor(total / 2)); setCashReceived(Math.floor(total / 2)); }}
+                className={`rounded-lg border px-3 py-2 text-sm ${debtMode === "partial" ? "border-[var(--primary)] bg-[var(--primary)] text-white" : "border-[var(--border)]"}`}
+              >Hutang sebagian</button>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <Button
+              className="flex-1"
+              onClick={() => checkout({ printAfter: true })}
+              disabled={
+                checkoutLoading ||
+                (paymentMethod === "cash" && debtMode !== "full" && cashReceived < (debtMode === "partial" ? Math.min(payNow, total) : total))
+              }
+            >
+              {checkoutLoading ? "Memproses..." : "Pembayaran [F8] TUNAI"}
+            </Button>
+            <Button variant="outline" onClick={closeCheckoutModal}>Batal</Button>
+          </div>
+        </div>
+        ) : (
         <div className="space-y-4">
           <div>
             <label className="mb-1 block text-xs text-[var(--muted-foreground)]">Pelanggan (opsional)</label>
@@ -1885,6 +2156,7 @@ export function PosPage() {
             Enter = bayar + cetak struk · Shift+Enter = bayar saja
           </p>
         </div>
+        )}
       </Modal>
 
       <Modal
