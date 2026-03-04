@@ -71,16 +71,18 @@ export function LaporanPage() {
   const [deleteTarget, setDeleteTarget] = useState<OrderRow | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [ordersError, setOrdersError] = useState<string | null>(null);
 
-  function getDateRange(): { start: string; end: string; label: string } {
+  function getDateRange(): { start: string; endExclusive: string; label: string } {
     let start: Date;
-    let end: Date;
+    let endExclusive: Date;
     let label: string;
     if (period === "day") {
       const d = new Date(dateValue + "T00:00:00");
       start = new Date(d);
-      end = new Date(d);
-      end.setHours(23, 59, 59, 999);
+      start.setHours(0, 0, 0, 0);
+      endExclusive = new Date(start);
+      endExclusive.setDate(endExclusive.getDate() + 1);
       label = formatDate(d);
     } else if (period === "week") {
       const d = new Date(dateValue + "T12:00:00");
@@ -88,33 +90,31 @@ export function LaporanPage() {
       const diff = d.getDate() - day + (day === 0 ? -6 : 1);
       start = new Date(d.getFullYear(), d.getMonth(), diff);
       start.setHours(0, 0, 0, 0);
-      end = new Date(start);
-      end.setDate(end.getDate() + 6);
-      end.setHours(23, 59, 59, 999);
-      label = `${formatDate(start)} – ${formatDate(end)}`;
+      endExclusive = new Date(start);
+      endExclusive.setDate(endExclusive.getDate() + 7);
+      label = `${formatDate(start)} – ${formatDate(new Date(endExclusive.getTime() - 1))}`;
     } else if (period === "year") {
       const y = parseInt(dateValue, 10);
       start = new Date(y, 0, 1);
       start.setHours(0, 0, 0, 0);
-      end = new Date(y, 11, 31);
-      end.setHours(23, 59, 59, 999);
+      endExclusive = new Date(y + 1, 0, 1);
       label = `Tahun ${y}`;
     } else {
       const [y, m] = dateValue.split("-").map(Number);
       start = new Date(y, m - 1, 1);
       start.setHours(0, 0, 0, 0);
-      end = new Date(y, m, 0);
-      end.setHours(23, 59, 59, 999);
+      endExclusive = new Date(y, m, 1);
       const monthNames = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
       label = `${monthNames[m - 1]} ${y}`;
     }
-    return { start: start.toISOString(), end: end.toISOString(), label };
+    return { start: start.toISOString(), endExclusive: endExclusive.toISOString(), label };
   }
 
   useEffect(() => {
     if (!orgId) return;
     setLoading(true);
-    const { start, end, label } = getDateRange();
+    setOrdersError(null);
+    const { start, endExclusive, label } = getDateRange();
     setDateLabel(label);
 
     const ordersQuery = supabase
@@ -123,7 +123,7 @@ export function LaporanPage() {
       .eq("organization_id", orgId)
       .eq("status", "paid")
       .gte("created_at", start)
-      .lte("created_at", end)
+      .lt("created_at", endExclusive)
       .order("created_at", { ascending: false });
 
     const cashQuery = supabase
@@ -131,7 +131,7 @@ export function LaporanPage() {
       .select("type, amount")
       .eq("organization_id", orgId)
       .gte("created_at", start)
-      .lte("created_at", end);
+      .lt("created_at", endExclusive);
 
     Promise.all([
       ordersQuery,
@@ -139,6 +139,9 @@ export function LaporanPage() {
       supabase.from("payables").select("amount, paid").eq("organization_id", orgId),
       cashQuery,
     ]).then(async ([ordersRes, recRes, payRes, cashRes]) => {
+      if (ordersRes.error) {
+        setOrdersError(ordersRes.error.message || "Gagal memuat data penjualan");
+      }
       const orders = (ordersRes.data ?? []) as Array<{
         id: string;
         created_at: string;
@@ -329,6 +332,13 @@ export function LaporanPage() {
         </div>
       ) : (
         <>
+          {ordersError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200">
+              <p className="font-medium">Gagal memuat data penjualan</p>
+              <p className="text-sm mt-1">{ordersError}</p>
+              <p className="text-xs mt-2 text-[var(--muted-foreground)]">Pastikan Anda anggota organisasi ini dan koneksi stabil.</p>
+            </div>
+          )}
           <div className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-4">
             <h3 className="mb-4 text-lg font-semibold text-[var(--foreground)]">Laba Rugi — {dateLabel}</h3>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -338,7 +348,11 @@ export function LaporanPage() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-xl font-bold text-[var(--foreground)]">{formatIdr(penjualan)}</p>
-                  <p className="text-xs text-[var(--muted-foreground)]">Setelah diskon · {orderCount} transaksi</p>
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    {orderCount === 0 && !ordersError
+                      ? "Tidak ada transaksi Lunas pada periode ini. Pastikan periode & organisasi sama dengan saat transaksi POS."
+                      : `Setelah diskon · ${orderCount} transaksi`}
+                  </p>
                 </CardContent>
               </Card>
               <Card>
