@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
@@ -60,18 +60,7 @@ export function SubscriptionPage() {
   const periodEnd = subscription?.current_period_end ? new Date(subscription.current_period_end) : null;
   const now = new Date();
   const periodExpired = !!(subscription && periodEnd && periodEnd < now) || subscription?.status === "canceled";
-  const isTrialing = subscription?.status === "trialing";
   const trialExpired = periodExpired;
-
-  const loadSubscription = useCallback(() => {
-    if (!orgId) return;
-    supabase
-      .from("subscriptions")
-      .select("*, subscription_plans(*)")
-      .eq("organization_id", orgId)
-      .maybeSingle()
-      .then(({ data }) => setSubscription(data as SubscriptionWithPlan | null));
-  }, [orgId]);
 
   if (loading) {
     return (

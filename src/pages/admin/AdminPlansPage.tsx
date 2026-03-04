@@ -136,13 +136,17 @@ export function AdminPlansPage() {
     const sortPlans = (list: SubscriptionPlan[]) => [...list].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     if (planForm.id) {
       const { error: err } = await supabase.from("subscription_plans").update(payload).eq("id", planForm.id);
-      if (!err) {
+      if (err) setError(err.message);
+      else {
+        setError(null);
         setPlans((prev) => sortPlans(prev.map((p) => (p.id === planForm.id ? { ...p, ...payload } : p))));
         closePlanForm();
       }
     } else {
       const { data, error: err } = await supabase.from("subscription_plans").insert(payload).select("id").single();
-      if (!err && data) {
+      if (err) setError(err.message);
+      else if (data) {
+        setError(null);
         setPlans((prev) => sortPlans([...prev, { ...payload, id: data.id, created_at: "", updated_at: "" }]));
         closePlanForm();
       }
@@ -154,7 +158,8 @@ export function AdminPlansPage() {
     if (!confirm("Hapus paket ini? Organisasi yang memakai paket ini bisa terganggu.")) return;
     setPlanDeletingId(id);
     const { error: err } = await supabase.from("subscription_plans").delete().eq("id", id);
-    if (!err) setPlans((prev) => prev.filter((p) => p.id !== id));
+    if (err) setError(err.message);
+    else setPlans((prev) => prev.filter((p) => p.id !== id));
     setPlanDeletingId(null);
   }
 
@@ -418,7 +423,6 @@ export function AdminPlansPage() {
                       checked={planForm.addon_feature_keys.includes(key)}
                       onChange={(e) => {
                         setPlanForm((prev) => {
-                          const has = prev.addon_feature_keys.includes(key);
                           const next = e.target.checked
                             ? [...prev.addon_feature_keys, key]
                             : prev.addon_feature_keys.filter((k) => k !== key);
