@@ -89,6 +89,15 @@ interface CartItem {
   variantName?: string | null;
 }
 
+interface PendingPosDraft {
+  id: string;
+  createdAt: string;
+  customerId: string | null;
+  notes: string;
+  discount: number;
+  cart: CartItem[];
+}
+
 const PRICE_TYPES = [
   { value: "retail", label: "Retail" },
   { value: "grosir", label: "Grosir" },
@@ -175,6 +184,9 @@ export function PosPage() {
   const [classicAddQty, setClassicAddQty] = useState(1);
   const [customerSisaPiutang, setCustomerSisaPiutang] = useState<number>(0);
   const [classicProductSearchModalOpen, setClassicProductSearchModalOpen] = useState(false);
+  const [pendingModalOpen, setPendingModalOpen] = useState(false);
+  const [pendingDrafts, setPendingDrafts] = useState<PendingPosDraft[]>([]);
+  const [closePosModalOpen, setClosePosModalOpen] = useState(false);
 
   const posLayout = getPosLayout(orgId ?? undefined);
 
@@ -207,7 +219,7 @@ export function PosPage() {
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       const inInput = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName ?? "");
-      if (addModal || scanModalOpen || exceedStockConfirm.open || classicProductSearchModalOpen) return;
+      if (addModal || scanModalOpen || exceedStockConfirm.open || classicProductSearchModalOpen || pendingModalOpen || closePosModalOpen) return;
 
       if (checkoutModalOpen) {
         if (e.key === "Enter" && !inInput) {
@@ -486,6 +498,73 @@ export function PosPage() {
   const tax = 0;
   const discountAmount = Math.min(Math.max(0, Number(discount) || 0), subtotal);
   const total = Math.max(0, subtotal - discountAmount + tax);
+
+  function getPendingKey() {
+    if (!orgId || !currentOutletId) return null;
+    return `hisabia_pos_pending_${orgId}_${currentOutletId}`;
+  }
+
+  function savePendingDraft() {
+    if (cart.length === 0) return;
+    const key = getPendingKey();
+    if (!key) return;
+    let list: PendingPosDraft[] = [];
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (raw) {
+        list = JSON.parse(raw) as PendingPosDraft[];
+      }
+    } catch {
+      list = [];
+    }
+    const id =
+      (window.crypto && typeof window.crypto.randomUUID === "function"
+        ? window.crypto.randomUUID()
+        : `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
+    const draft: PendingPosDraft = {
+      id,
+      createdAt: new Date().toISOString(),
+      customerId: selectedCustomerId ?? null,
+      notes: notes.trim(),
+      discount: Number(discount) || 0,
+      cart: cart.map((c) => ({ ...c })),
+    };
+    list.push(draft);
+    window.localStorage.setItem(key, JSON.stringify(list));
+  }
+
+  function openPending() {
+    const key = getPendingKey();
+    if (!key) return;
+    let list: PendingPosDraft[] = [];
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (raw) {
+        list = JSON.parse(raw) as PendingPosDraft[];
+      }
+    } catch {
+      list = [];
+    }
+    setPendingDrafts(list);
+    setPendingModalOpen(true);
+  }
+
+  function applyPendingDraft(id: string) {
+    const key = getPendingKey();
+    if (!key) return;
+    const list = [...pendingDrafts];
+    const idx = list.findIndex((d) => d.id === id);
+    if (idx === -1) return;
+    const draft = list[idx];
+    setCart(draft.cart);
+    setSelectedCustomerId(draft.customerId);
+    setNotes(draft.notes);
+    setDiscount(draft.discount);
+    list.splice(idx, 1);
+    setPendingDrafts(list);
+    window.localStorage.setItem(key, JSON.stringify(list));
+    setPendingModalOpen(false);
+  }
 
   // Reset nominal tunai saat total berubah atau debt mode berubah
   useEffect(() => {
@@ -1132,6 +1211,13 @@ export function PosPage() {
           <div className="flex shrink-0 items-center justify-end border-b border-[var(--border)] bg-[var(--background)] px-3 py-2">
             <Link
               to={`/org/${orgId}/dashboard`}
+              onClick={(e) => {
+                if (cart.length === 0 && !selectedCustomerId && !notes.trim()) {
+                  return;
+                }
+                e.preventDefault();
+                setClosePosModalOpen(true);
+              }}
               className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium hover:bg-[var(--muted)]"
             >
               Tutup
@@ -1152,6 +1238,13 @@ export function PosPage() {
           <div className="flex shrink-0 items-center justify-end border-b border-[var(--border)] bg-[var(--background)] px-3 py-2">
             <Link
               to={`/org/${orgId}/dashboard`}
+              onClick={(e) => {
+                if (cart.length === 0 && !selectedCustomerId && !notes.trim()) {
+                  return;
+                }
+                e.preventDefault();
+                setClosePosModalOpen(true);
+              }}
               className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium hover:bg-[var(--muted)]"
             >
               Tutup
@@ -1177,6 +1270,13 @@ export function PosPage() {
           <div className="flex shrink-0 items-center justify-end border-b border-[var(--border)] bg-[var(--background)] px-3 py-2">
             <Link
               to={`/org/${orgId}/dashboard`}
+              onClick={(e) => {
+                if (cart.length === 0 && !selectedCustomerId && !notes.trim()) {
+                  return;
+                }
+                e.preventDefault();
+                setClosePosModalOpen(true);
+              }}
               className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium hover:bg-[var(--muted)]"
             >
               Tutup
@@ -1266,12 +1366,30 @@ export function PosPage() {
           <span className="text-sm font-medium text-[var(--foreground)]">
             {currentOutlet?.name ?? "POS"}
           </span>
-          <Link
-            to={`/org/${orgId}/dashboard`}
-            className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium hover:bg-[var(--muted)]"
-          >
-            Tutup
-          </Link>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={openPending}
+              className="text-xs sm:text-sm"
+            >
+              Pending ({pendingDrafts.length})
+            </Button>
+            <Link
+              to={`/org/${orgId}/dashboard`}
+              onClick={(e) => {
+                if (cart.length === 0 && !selectedCustomerId && !notes.trim()) {
+                  return;
+                }
+                e.preventDefault();
+                setClosePosModalOpen(true);
+              }}
+              className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium hover:bg-[var(--muted)]"
+            >
+              Tutup
+            </Link>
+          </div>
         </div>
       )}
       <div className="flex flex-col gap-2 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:px-4">
@@ -1333,13 +1451,18 @@ export function PosPage() {
                     className="h-10"
                   />
                 </div>
-                <div className="w-20 shrink-0">
+                <div className="w-24 shrink-0">
                   <p className="mb-1 text-xs text-[var(--muted-foreground)]">Qty [F3]</p>
                   <Input
                     type="number"
-                    min={1}
+                    min={0.1}
+                    step={0.1}
                     value={classicAddQty}
-                    onChange={(e) => setClassicAddQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    onChange={(e) =>
+                      setClassicAddQty(
+                        Math.max(0.1, parseFloat(e.target.value) || 0.1)
+                      )
+                    }
                     className="h-10"
                   />
                 </div>
@@ -2005,10 +2128,14 @@ export function PosPage() {
               <label className="mb-1 block text-xs text-[var(--muted-foreground)]">Jumlah</label>
               <Input
                 type="number"
-                min={1}
+              min={0.1}
+              step={0.1}
                 value={addModal.qty}
                 onChange={(e) =>
-                  setAddModal({ ...addModal, qty: Math.max(1, parseInt(e.target.value, 10) || 1) })
+                  setAddModal({
+                    ...addModal,
+                    qty: Math.max(0.1, parseFloat(e.target.value) || 0.1),
+                  })
                 }
               />
               {addModal.selectedUnit &&
@@ -2354,6 +2481,91 @@ export function PosPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={pendingModalOpen}
+        onClose={() => setPendingModalOpen(false)}
+        title="Transaksi pending"
+        size="lg"
+      >
+        {pendingDrafts.length === 0 ? (
+          <p className="text-sm text-[var(--muted-foreground)]">
+            Belum ada transaksi pending.
+          </p>
+        ) : (
+          <div className="max-h-[60vh] space-y-2 overflow-y-auto pt-1">
+            {pendingDrafts.map((draft) => {
+              const dt = new Date(draft.createdAt);
+              const totalDraft = draft.cart.reduce(
+                (sum, c) => sum + c.price * c.qty,
+                0
+              );
+              const firstName = draft.cart[0]?.name ?? "Transaksi POS";
+              return (
+                <button
+                  key={draft.id}
+                  type="button"
+                  onClick={() => applyPendingDraft(draft.id)}
+                  className="flex w-full flex-col rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-left hover:bg-[var(--muted)]/60"
+                >
+                  <span className="text-sm font-medium text-[var(--foreground)]">
+                    {firstName}
+                  </span>
+                  <span className="mt-0.5 text-xs text-[var(--muted-foreground)]">
+                    {dt.toLocaleString("id-ID")} ·{" "}
+                    {formatIdr(totalDraft)}
+                  </span>
+                  {draft.customerId && (
+                    <span className="mt-0.5 text-xs text-[var(--muted-foreground)]">
+                      Pelanggan: draft
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={closePosModalOpen}
+        onClose={() => setClosePosModalOpen(false)}
+        title="Tutup POS"
+        size="sm"
+      >
+        <p className="text-sm text-[var(--muted-foreground)]">
+          Ada barang di keranjang. Apa yang ingin Anda lakukan?
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setClosePosModalOpen(false)}
+          >
+            Batal
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setClosePosModalOpen(false);
+              navigate(`/org/${orgId}/dashboard`);
+            }}
+          >
+            Keluar tanpa simpan
+          </Button>
+          <Button
+            type="button"
+            onClick={() => {
+              savePendingDraft();
+              setClosePosModalOpen(false);
+              navigate(`/org/${orgId}/dashboard`);
+            }}
+          >
+            Simpan transaksi
+          </Button>
+        </div>
       </Modal>
 
       <ConfirmDialog
