@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
 import { formatIdr, getStockStatus, getStockStatusLabel } from "@/lib/utils";
@@ -114,7 +114,9 @@ export function PosPage() {
   const { orgId, currentOutletId, currentOutlet, currentOutletType, currentEmployee } = useOrg();
   const location = useLocation();
   const params = useParams<{ orgId: string }>();
+  const navigate = useNavigate();
   const isPosFullScreen = location.pathname === `/org/${params.orgId}/pos`;
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [products, setProducts] = useState<ProductWithCategory[]>([]);
   /** Map barcode (lowercase) → product id. Sumber: product_barcodes + products.barcode fallback. */
   const [barcodeToProductId, setBarcodeToProductId] = useState<Record<string, string>>({});
@@ -171,8 +173,29 @@ export function PosPage() {
   const [niimbotLabelPrinting, setNiimbotLabelPrinting] = useState(false);
   const [niimbotLabelError, setNiimbotLabelError] = useState<string | null>(null);
   const [classicAddQty, setClassicAddQty] = useState(1);
+  const [customerSisaPiutang, setCustomerSisaPiutang] = useState<number>(0);
+  const [classicProductSearchModalOpen, setClassicProductSearchModalOpen] = useState(false);
 
   const posLayout = getPosLayout(orgId ?? undefined);
+
+  useEffect(() => {
+    if (!orgId || !selectedCustomerId) {
+      setCustomerSisaPiutang(0);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("receivables")
+        .select("amount, paid")
+        .eq("organization_id", orgId)
+        .eq("customer_id", selectedCustomerId);
+      if (cancelled) return;
+      const total = (data ?? []).reduce((sum, r) => sum + (Number(r.amount) - Number(r.paid ?? 0)), 0);
+      setCustomerSisaPiutang(Math.max(0, total));
+    })();
+    return () => { cancelled = true; };
+  }, [orgId, selectedCustomerId]);
 
   useEffect(() => {
     if (cart.length === 0) setSelectedCartIndex(null);
@@ -184,13 +207,24 @@ export function PosPage() {
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       const inInput = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName ?? "");
-      if (addModal || scanModalOpen || exceedStockConfirm.open) return;
+      if (addModal || scanModalOpen || exceedStockConfirm.open || classicProductSearchModalOpen) return;
 
       if (checkoutModalOpen) {
         if (e.key === "Enter" && !inInput) {
           e.preventDefault();
           if (e.shiftKey) checkout({ printAfter: false });
           else checkout({ printAfter: true });
+          return;
+        }
+        if (e.key === "F7" || e.key === "F8") {
+          e.preventDefault();
+          if (e.shiftKey) checkout({ printAfter: false });
+          else checkout({ printAfter: true });
+          return;
+        }
+        if (e.key === "F11") {
+          e.preventDefault();
+          checkout({ printAfter: false });
           return;
         }
         return;
@@ -201,6 +235,40 @@ export function PosPage() {
       if (e.key === "Enter") {
         e.preventDefault();
         if (cart.length > 0) openCheckoutModal();
+        return;
+      }
+
+      if (e.key === "F4") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+      if (e.key === "F5") {
+        e.preventDefault();
+        fetchProducts();
+        return;
+      }
+      if (e.key === "F6") {
+        e.preventDefault();
+        if (orgId) navigate(`/org/${orgId}/dashboard`);
+        return;
+      }
+      if (e.key === "F9") {
+        e.preventDefault();
+        if (cart.length > 0) openCheckoutModal();
+        return;
+      }
+      if (e.key === "F11") {
+        e.preventDefault();
+        if (cart.length > 0) openCheckoutModal();
+        return;
+      }
+      if (e.key === "F12") {
+        e.preventDefault();
+        if (cart.length > 0) {
+          setCart([]);
+          setSelectedCartIndex(null);
+        }
         return;
       }
 
@@ -235,7 +303,7 @@ export function PosPage() {
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [cart, selectedCartIndex, addModal, checkoutModalOpen, scanModalOpen, exceedStockConfirm.open]);
+  }, [cart, selectedCartIndex, addModal, checkoutModalOpen, scanModalOpen, exceedStockConfirm.open, classicProductSearchModalOpen, orgId, navigate]);
 
   async function fetchActiveShift() {
     if (!currentOutletId) return;
@@ -689,6 +757,25 @@ export function PosPage() {
     openAddModal(product);
   }
 
+  /** Di POS klasik: pilih produk dari dialog cari → buka form tambah dengan qty classicAddQty. */
+  function openAddModalFromClassicSearch(product: ProductWithCategory) {
+    const units = getUnitsForProduct(product);
+    const first = units[0];
+    if (!first) return;
+    const variants = productVariants[product.id] ?? [];
+    const selectedReplace = variants.find((v) => v.price_type === "replace") ?? null;
+    setAddModal({
+      product,
+      qty: classicAddQty,
+      selectedUnit: first,
+      selectedReplaceVariant: selectedReplace,
+      selectedAddonVariants: [],
+      priceType: "retail",
+    });
+    setClassicProductSearchModalOpen(false);
+    setSearch("");
+  }
+
   function openEditCartItem(item: CartItem) {
     const product = products.find((p) => p.id === item.productId);
     if (!product) return;
@@ -781,6 +868,10 @@ export function PosPage() {
     const qty = posLayout === "classic" ? classicAddQty : 1;
     if (addToCartByBarcode(code, qty)) {
       setSearch("");
+      return;
+    }
+    if (posLayout === "classic") {
+      setClassicProductSearchModalOpen(true);
     }
   }
 
@@ -1197,159 +1288,172 @@ export function PosPage() {
         </Button>
       </div>
       {posLayout === "classic" ? (
-      <div className="flex min-h-0 flex-1 flex-col gap-3 md:flex-row md:gap-4">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--background)]">
-          <div className="shrink-0 space-y-3 border-b border-[var(--border)] p-3 sm:p-4">
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
-              <div>
-                <span className="text-[var(--muted-foreground)]">Pelanggan [F4]</span>
-                <div className="mt-0.5">
+      <div className="flex min-h-0 flex-1 flex-col gap-3">
+        <div className="flex min-h-0 flex-1 gap-3 overflow-hidden md:gap-4">
+          {/* Panel kiri: info transaksi + input barcode + tabel barang */}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--background)]">
+            <div className="shrink-0 border-b border-[var(--border)] bg-[var(--muted)]/20 p-3">
+              <div className="mb-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                <div>
+                  <p className="text-xs text-[var(--muted-foreground)]">Pelanggan [F4]</p>
                   <SearchableSelect
                     options={customers.map((c) => ({ value: c.id, label: c.name }))}
                     value={selectedCustomerId ?? ""}
                     onChange={(v) => setSelectedCustomerId(v || null)}
                     placeholder="RETIL"
                     emptyLabel="—"
-                    className="!min-h-8"
                   />
                 </div>
+                <div>
+                  <p className="text-xs text-[var(--muted-foreground)]">No. Transaksi</p>
+                  <p className="font-medium tabular-nums">{activeShift?.id?.slice(0, 8) ?? "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-[var(--muted-foreground)]">Tanggal</p>
+                  <p className="font-medium">{new Date().toLocaleDateString("id-ID")}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-[var(--muted-foreground)]">Keterangan / Dept</p>
+                  <p className="font-medium">Penjualan POS · Default Dept</p>
+                </div>
               </div>
-              <div>
-                <span className="text-[var(--muted-foreground)]">No. Transaksi</span>
-                <p className="mt-0.5 font-medium">{activeShift?.id?.slice(0, 8) ?? "—"}</p>
+              <div className="mb-3 flex items-center gap-4">
+                <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4 rounded border-[var(--border)]" defaultChecked /> History</label>
+                <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4 rounded border-[var(--border)]" defaultChecked /> Tunai</label>
               </div>
-              <div>
-                <span className="text-[var(--muted-foreground)]">Tanggal</span>
-                <p className="mt-0.5 font-medium">{new Date().toLocaleDateString("id-ID")}</p>
-              </div>
-              <div>
-                <span className="text-[var(--muted-foreground)]">Keterangan</span>
-                <p className="mt-0.5 font-medium">Penjualan POS</p>
-              </div>
-              <div>
-                <span className="text-[var(--muted-foreground)]">Dept</span>
-                <p className="mt-0.5 font-medium">Default Dept</p>
+              <div className="flex gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="mb-1 text-xs text-[var(--muted-foreground)]">Barcode / Kode Barang [F2]</p>
+                  <Input
+                    ref={searchInputRef}
+                    placeholder="Scan atau ketik kode + Enter"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    onKeyDown={handleSearchKeyDown}
+                    className="h-10"
+                  />
+                </div>
+                <div className="w-20 shrink-0">
+                  <p className="mb-1 text-xs text-[var(--muted-foreground)]">Qty [F3]</p>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={classicAddQty}
+                    onChange={(e) => setClassicAddQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    className="h-10"
+                  />
+                </div>
+                <div className="flex shrink-0 items-end">
+                  <Button type="button" variant="outline" size="sm" onClick={() => { setScanError(null); setScanModalOpen(true); }} className="h-10 px-3" title="Scan barcode">
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg>
+                  </Button>
+                </div>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-4">
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4 rounded" defaultChecked /> History</label>
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4 rounded" defaultChecked /> Tunai</label>
+            <div className="min-h-[200px] flex-1 overflow-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead className="sticky top-0 z-10 bg-[var(--muted)]/80 backdrop-blur-sm">
+                  <tr className="border-b border-[var(--border)]">
+                    <th className="whitespace-nowrap p-2 text-left text-xs font-medium text-[var(--muted-foreground)]">Kode</th>
+                    <th className="min-w-[140px] p-2 text-left text-xs font-medium text-[var(--muted-foreground)]">Nama Barang</th>
+                    <th className="w-16 p-2 text-right text-xs font-medium text-[var(--muted-foreground)]">Jml</th>
+                    <th className="w-14 p-2 text-center text-xs font-medium text-[var(--muted-foreground)]">Satuan</th>
+                    <th className="w-14 p-2 text-right text-xs font-medium text-[var(--muted-foreground)]">Stok</th>
+                    <th className="w-24 p-2 text-right text-xs font-medium text-[var(--muted-foreground)]">Harga</th>
+                    <th className="w-24 p-2 text-right text-xs font-medium text-[var(--muted-foreground)]">Total</th>
+                    <th className="w-24 p-2 text-center text-xs font-medium text-[var(--muted-foreground)]">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cart.length === 0 ? (
+                    <tr><td colSpan={8} className="p-8 text-center text-[var(--muted-foreground)]">Keranjang kosong. Scan barcode atau ketik kode + Enter.</td></tr>
+                  ) : (
+                    cart.map((item, index) => {
+                      const prod = products.find((p) => p.id === item.productId);
+                      const isSelected = selectedCartIndex === index;
+                      return (
+                        <tr
+                          key={cartItemKey(item)}
+                          className={`border-b border-[var(--border)] ${isSelected ? "bg-[var(--primary)]/10" : "hover:bg-[var(--muted)]/30"}`}
+                          onClick={() => setSelectedCartIndex(index)}
+                        >
+                          <td className="p-2 font-mono text-xs tabular-nums">{item.productId.slice(0, 8)}</td>
+                          <td className="p-2">{cartItemDisplayName(item)}</td>
+                          <td className="p-2 text-right tabular-nums">{item.qty}</td>
+                          <td className="p-2 text-center">{item.unitSymbol}</td>
+                          <td className="p-2 text-right tabular-nums">{prod != null ? Number(prod.stock ?? 0) : "—"}</td>
+                          <td className="p-2 text-right tabular-nums">{formatIdr(item.price)}</td>
+                          <td className="p-2 text-right font-medium tabular-nums">{formatIdr(item.price * item.qty)}</td>
+                          <td className="p-2">
+                            <div className="flex justify-center gap-1">
+                              <button type="button" onClick={(e) => { e.stopPropagation(); updateQty(item, -1); }} className="flex h-7 w-7 items-center justify-center rounded border border-[var(--border)] text-sm hover:bg-[var(--muted)]" aria-label="Kurangi">−</button>
+                              <button type="button" onClick={(e) => { e.stopPropagation(); updateQty(item, 1); }} className="flex h-7 w-7 items-center justify-center rounded border border-[var(--border)] text-sm hover:bg-[var(--muted)]" aria-label="Tambah">+</button>
+                              <button type="button" onClick={(e) => { e.stopPropagation(); removeCartItem(item); }} className="rounded border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50">Hapus</button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
-            <div className="flex gap-2">
-              <div className="flex-1">
-                <label className="mb-0.5 block text-xs text-[var(--muted-foreground)]">Barcode Scanner atau Kode Barang [F2]</label>
-                <Input
-                  placeholder="Scan atau ketik kode + Enter"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  onKeyDown={handleSearchKeyDown}
-                  className="min-h-9"
-                />
+            <div className="shrink-0 border-t border-[var(--border)] bg-[var(--muted)]/20 px-3 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 text-sm">
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  <span><span className="text-[var(--muted-foreground)]">Sub Total</span> {formatIdr(subtotal)}</span>
+                  <span><span className="text-[var(--muted-foreground)]">Pajak</span> 0</span>
+                  <span><span className="text-[var(--muted-foreground)]">Service</span> 0</span>
+                  <span className="font-semibold"><span className="text-[var(--muted-foreground)]">Total Penjualan</span> {formatIdr(total)}</span>
+                </div>
+                <div className="text-[var(--muted-foreground)]">
+                  Kasir {currentEmployee?.name ?? "—"} · Total Item = {cart.length}
+                </div>
               </div>
-              <div className="w-20">
-                <label className="mb-0.5 block text-xs text-[var(--muted-foreground)]">Qty [F3]</label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={classicAddQty}
-                  onChange={(e) => setClassicAddQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                  className="min-h-9"
-                />
+            </div>
+          </div>
+          {/* Panel kanan: total besar + pembayaran */}
+          <div className="flex w-full shrink-0 flex-col md:w-72">
+            <div className="flex flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--background)]">
+              <div className="border-b border-[var(--border)] bg-[var(--muted)]/30 px-4 py-4 text-center">
+                <p className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">Total</p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-600 sm:text-3xl">{formatIdr(total)}</p>
               </div>
-              <div className="flex items-end">
-                <Button type="button" variant="outline" size="sm" onClick={() => { setScanError(null); setScanModalOpen(true); }} className="min-h-9" title="Scan barcode">
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg>
+              <div className="flex flex-1 flex-col justify-between p-4">
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-xs text-[var(--muted-foreground)]">Total</p>
+                    <p className="font-semibold tabular-nums">{formatIdr(total)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-[var(--muted-foreground)]">Sisa Piutang</p>
+                    <p
+                      className={`text-lg font-semibold tabular-nums ${
+                        selectedCustomerId && customerSisaPiutang > 0
+                          ? "animate-[pos-blink-red_1s_ease-in-out_infinite] text-red-600"
+                          : ""
+                      }`}
+                    >
+                      {selectedCustomerId ? formatIdr(customerSisaPiutang) : "0"}
+                    </p>
+                  </div>
+                </div>
+                <Button className="mt-4 h-12 w-full text-base font-medium" onClick={openCheckoutModal} disabled={cart.length === 0} title="Enter">
+                  Pembayaran
                 </Button>
               </div>
             </div>
           </div>
-          <div className="flex-1 overflow-auto p-3">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-[var(--border)] bg-[var(--muted)]/50">
-                  <th className="p-2 text-left font-medium">Kode Barang</th>
-                  <th className="p-2 text-left font-medium">Nama Barang</th>
-                  <th className="p-2 text-right font-medium">Jumlah</th>
-                  <th className="p-2 text-center font-medium">Satuan</th>
-                  <th className="p-2 text-right font-medium">Stok</th>
-                  <th className="p-2 text-right font-medium">Harga</th>
-                  <th className="p-2 text-right font-medium">Total</th>
-                  <th className="w-8" />
-                </tr>
-              </thead>
-              <tbody>
-                {cart.length === 0 ? (
-                  <tr><td colSpan={8} className="p-4 text-center text-[var(--muted-foreground)]">Keranjang kosong. Scan barcode atau ketik kode + Enter.</td></tr>
-                ) : (
-                  cart.map((item, index) => {
-                    const prod = products.find((p) => p.id === item.productId);
-                    const isSelected = selectedCartIndex === index;
-                    return (
-                      <tr
-                        key={cartItemKey(item)}
-                        className={`border-b border-[var(--border)] ${isSelected ? "bg-[var(--primary)]/10" : ""}`}
-                        onClick={() => setSelectedCartIndex(index)}
-                      >
-                        <td className="p-2 font-mono text-xs">{item.productId.slice(0, 8)}</td>
-                        <td className="p-2">{cartItemDisplayName(item)}</td>
-                        <td className="p-2 text-right">{item.qty}</td>
-                        <td className="p-2 text-center">{item.unitSymbol}</td>
-                        <td className="p-2 text-right">{prod ? Number(prod.stock ?? 0) : "—"}</td>
-                        <td className="p-2 text-right">{formatIdr(item.price)}</td>
-                        <td className="p-2 text-right font-medium">{formatIdr(item.price * item.qty)}</td>
-                        <td className="p-2">
-                          <div className="flex gap-1">
-                            <button type="button" onClick={(e) => { e.stopPropagation(); updateQty(item, -1); }} className="rounded border border-[var(--border)] px-1.5 py-0.5 text-xs hover:bg-[var(--muted)]">−</button>
-                            <button type="button" onClick={(e) => { e.stopPropagation(); updateQty(item, 1); }} className="rounded border border-[var(--border)] px-1.5 py-0.5 text-xs hover:bg-[var(--muted)]">+</button>
-                            <button type="button" onClick={(e) => { e.stopPropagation(); removeCartItem(item); }} className="rounded border border-red-200 px-1.5 py-0.5 text-xs text-red-600 hover:bg-red-50">Hapus</button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-          <div className="shrink-0 border-t border-[var(--border)] p-3 text-sm">
-            <div className="flex flex-wrap justify-between gap-4">
-              <div>
-                <span className="text-[var(--muted-foreground)]">Sub Total:</span> {formatIdr(subtotal)}
-                <span className="ml-4 text-[var(--muted-foreground)]">Total Pajak:</span> 0
-                <span className="ml-4 text-[var(--muted-foreground)]">Total Service:</span> 0
-                <span className="ml-4 font-medium">Total Penjualan:</span> {formatIdr(total)}
-              </div>
-              <div>
-                <span className="text-[var(--muted-foreground)]">Kasir</span> {currentEmployee?.name ?? "—"} · Total Item = {cart.length}
-              </div>
-            </div>
-          </div>
         </div>
-        <div className="flex w-full min-w-0 flex-shrink-0 flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--background)] md:max-h-full md:w-80">
-          <div className="shrink-0 border-b border-[var(--border)] bg-[var(--muted)]/30 p-4">
-            <p className="text-center text-xs font-medium uppercase text-[var(--muted-foreground)]">Total</p>
-            <p className="text-center text-3xl font-bold text-emerald-600">{formatIdr(total)}</p>
-          </div>
-          <div className="flex flex-1 flex-col justify-between p-4">
-            <div>
-              <p className="text-sm text-[var(--muted-foreground)]">Harga / Total</p>
-              <p className="mt-1 font-semibold">{formatIdr(total)}</p>
-              <p className="mt-4 text-sm text-[var(--muted-foreground)]">Sisa Piutang</p>
-              <p className="text-lg font-semibold">0</p>
-            </div>
-            <Button className="mt-4 h-12 w-full text-base" onClick={openCheckoutModal} disabled={cart.length === 0} title="Enter">
-              Pembayaran
-            </Button>
-          </div>
-        </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-[var(--border)] bg-[var(--muted)]/30 px-3 py-2">
+        {/* Bar bawah: full width */}
+        <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--muted)]/20 px-3 py-2">
           <Button variant="outline" size="sm" onClick={() => cart.length > 0 && (setCart([]), setSelectedCartIndex(null))} disabled={cart.length === 0}>
             [F12] Batal
           </Button>
-          <Link to={`/org/${orgId}/dashboard`} className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm hover:bg-[var(--muted)]">
+          <Link to={`/org/${orgId}/dashboard`} className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm hover:bg-[var(--muted)]">
             [F6] Tutup
           </Link>
-          <span className="ml-2 text-xs text-[var(--muted-foreground)]">Cari: ketik kode + Enter</span>
+          <span className="text-xs text-[var(--muted-foreground)]">Ketik kode barang + Enter untuk tambah</span>
         </div>
       </div>
       ) : (
@@ -1373,6 +1477,7 @@ export function PosPage() {
           </div>
           <div className="mb-3 flex gap-2">
             <Input
+              ref={searchInputRef}
               placeholder="Cari produk atau scan barcode (ketik kode + Enter)"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -1681,6 +1786,63 @@ export function PosPage() {
           lastError={scanError}
         />
       </Modal>
+
+      {posLayout === "classic" && (
+      <Modal
+        open={classicProductSearchModalOpen}
+        onClose={() => setClassicProductSearchModalOpen(false)}
+        title="Cari barang"
+        size="lg"
+      >
+        <div className="space-y-2">
+          <p className="text-sm text-[var(--muted-foreground)]">
+            Tidak ada barcode &quot;{search.trim()}&quot;. Pilih barang yang cocok (nama mengandung teks tersebut):
+          </p>
+          <div className="max-h-[60vh] overflow-y-auto rounded-lg border border-[var(--border)]">
+            {(() => {
+              const q = search.trim().toLowerCase();
+              const list = products.filter(
+                (p) => p.is_available && (q === "" || p.name.toLowerCase().includes(q))
+              ).slice(0, 100);
+              if (list.length === 0) {
+                return (
+                  <p className="p-4 text-center text-sm text-[var(--muted-foreground)]">
+                    Tidak ada produk yang cocok. Coba kata kunci lain.
+                  </p>
+                );
+              }
+              return (
+                <ul className="divide-y divide-[var(--border)]">
+                  {list.map((p) => {
+                    const units = getUnitsForProduct(p);
+                    const first = units[0];
+                    const price = first && resolvePrice(p, first.unit_id, "retail");
+                    return (
+                      <li key={p.id}>
+                        <button
+                          type="button"
+                          onClick={() => openAddModalFromClassicSearch(p)}
+                          className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-[var(--muted)]/50"
+                        >
+                          <span className="min-w-0 flex-1 font-medium text-[var(--foreground)]">{p.name}</span>
+                          <span className="shrink-0 text-sm font-semibold text-[var(--primary)]">
+                            {price != null ? formatIdr(price) : "—"}
+                            {first && <span className="ml-1 text-xs text-[var(--muted-foreground)]">/ {first.units?.symbol ?? "pcs"}</span>}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              );
+            })()}
+          </div>
+          <p className="text-xs text-[var(--muted-foreground)]">
+            Klik barang untuk tambah ke keranjang (qty {classicAddQty}). Stok &amp; satuan bisa diubah di form berikutnya.
+          </p>
+        </div>
+      </Modal>
+      )}
 
       <Modal
         open={!!addModal}
