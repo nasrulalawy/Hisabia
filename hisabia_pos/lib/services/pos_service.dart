@@ -221,12 +221,15 @@ class PosService {
   }
 
   /// Update stok dan stock_movements setelah order (panggil setelah checkout sukses).
+  /// Untuk produk dengan resep (product_ingredients), stok bahan juga dikurangi dan dicatat sebagai pemakaian.
   static Future<void> updateStockAndMovements({
     required String orgId,
     required String orderId,
     required List<CartItem> cart,
     required List<Product> products,
   }) async {
+    final orderShort = orderId.length > 8 ? orderId.substring(0, 8) : orderId;
+
     for (final c in cart) {
       Product? product;
       for (final p in products) {
@@ -249,7 +252,49 @@ class PosService {
         'product_id': c.productId,
         'type': 'out',
         'quantity': qtyBase,
-        'notes': 'Penjualan POS #${orderId.substring(0, orderId.length > 8 ? 8 : orderId.length)} (${c.qty} ${c.unitSymbol})',
+        'notes': 'Penjualan POS #$orderShort (${c.qty} ${c.unitSymbol})',
+      });
+    }
+
+    final productIds = cart.map((e) => e.productId).toSet().toList();
+    if (productIds.isEmpty) return;
+    final recipeRes = await _client
+        .from('product_ingredients')
+        .select('product_id, ingredient_id, quantity')
+        .inFilter('product_id', productIds);
+    final recipeList = (recipeRes as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [];
+    final usageByIngredient = <String, double>{};
+    for (final c in cart) {
+      final qtyBase = c.qty * c.conversionToBase;
+      for (final pi in recipeList) {
+        if (pi['product_id'] != c.productId) continue;
+        final ingId = pi['ingredient_id'] as String?;
+        if (ingId == null) continue;
+        final qty = (pi['quantity'] as num?)?.toDouble() ?? 0;
+        usageByIngredient[ingId] = (usageByIngredient[ingId] ?? 0) + qty * qtyBase;
+      }
+    }
+    for (final entry in usageByIngredient.entries) {
+      if (entry.value <= 0) continue;
+      final ingId = entry.key;
+      final qtyUsed = entry.value;
+      final ingRes = await _client.from('ingredients').select('stock').eq('id', ingId).maybeSingle();
+      final current = ingRes != null && ingRes['stock'] != null
+          ? (ingRes['stock'] as num).toDouble()
+          : 0.0;
+      final newIngStock = (current - qtyUsed).clamp(0.0, double.infinity);
+      await _client.from('ingredients').update({
+        'stock': newIngStock,
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', ingId);
+      await _client.from('ingredient_stock_movements').insert({
+        'organization_id': orgId,
+        'ingredient_id': ingId,
+        'type': 'usage',
+        'quantity': qtyUsed,
+        'notes': 'Pemakaian dari penjualan #$orderShort',
+        'reference_type': 'order',
+        'reference_id': orderId,
       });
     }
   }

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
 import { formatDate, parsePriceIdr } from "@/lib/utils";
+import { postJournalEntry } from "@/lib/accounting";
 import { DataTable, type Column } from "@/components/crud/DataTable";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
@@ -15,6 +16,7 @@ interface ProductWithUnit {
   cost_price: number;
   selling_price: number;
   is_available: boolean;
+  use_ingredients_for_cost?: boolean;
   units?: { symbol: string } | null;
 }
 
@@ -28,12 +30,19 @@ interface StockMovementRow {
 }
 
 export function StokTokoPage() {
-  const { orgId } = useOrg();
+  const { orgId, currentOutletId } = useOrg();
   const [products, setProducts] = useState<ProductWithUnit[]>([]);
   const [movements, setMovements] = useState<StockMovementRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalType, setModalType] = useState<"masuk" | "adjust" | null>(null);
-  const [form, setForm] = useState({ product_id: "", quantity: "", price: "", notes: "" });
+  const [form, setForm] = useState({
+    product_id: "",
+    quantity: "",
+    price: "",
+    notes: "",
+    record_purchase: false,
+    purchase_amount: "",
+  });
   const [submitLoading, setSubmitLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,7 +52,7 @@ export function StokTokoPage() {
     const [prodsRes, movRes] = await Promise.all([
       supabase
         .from("products")
-        .select("id, name, stock, cost_price, selling_price, is_available, units(symbol)")
+        .select("id, name, stock, cost_price, selling_price, is_available, use_ingredients_for_cost, units(symbol)")
         .eq("organization_id", orgId)
         .order("name"),
       supabase
@@ -65,7 +74,14 @@ export function StokTokoPage() {
 
   function openModal(type: "masuk" | "adjust") {
     setModalType(type);
-    setForm({ product_id: "", quantity: type === "masuk" ? "1" : "", price: "", notes: "" });
+    setForm({
+      product_id: "",
+      quantity: type === "masuk" ? "1" : "",
+      price: "",
+      notes: "",
+      record_purchase: false,
+      purchase_amount: "",
+    });
     setError(null);
   }
 
@@ -120,7 +136,8 @@ export function StokTokoPage() {
     }
 
     const updatePayload: { stock: number; cost_price?: number } = { stock: newStock };
-    if (modalType === "masuk" && price > 0) {
+    const useRecipeCost = Boolean(product?.use_ingredients_for_cost);
+    if (modalType === "masuk" && price > 0 && !useRecipeCost) {
       const currentCost = Number(product?.cost_price ?? 0);
       const addQty = Math.abs(qty);
       const totalQty = currentStock + addQty;
@@ -137,6 +154,39 @@ export function StokTokoPage() {
       setError(updErr.message);
       setSubmitLoading(false);
       return;
+    }
+
+    if (modalType === "masuk" && form.record_purchase && orgId) {
+      const purchaseAmount = parsePriceIdr(form.purchase_amount) || 0;
+      if (purchaseAmount > 0) {
+        const desc = form.notes.trim() || `Stok masuk ${product?.name ?? ""}`;
+        const { data: cf, error: cfErr } = await supabase
+          .from("cash_flows")
+          .insert({
+            organization_id: orgId,
+            outlet_id: currentOutletId ?? null,
+            type: "out",
+            amount: purchaseAmount,
+            description: desc.length > 100 ? desc.slice(0, 97) + "..." : desc,
+            reference_type: "stock_in",
+          })
+          .select("id")
+          .single();
+        if (!cfErr && cf) {
+          const entryDate = new Date().toISOString().slice(0, 10);
+          await postJournalEntry({
+            organization_id: orgId,
+            entry_date: entryDate,
+            description: desc.slice(0, 200),
+            reference_type: "cash_flow",
+            reference_id: cf.id,
+            lines: [
+              { code: "1-3", debit: purchaseAmount, credit: 0 },
+              { code: "1-1", debit: 0, credit: purchaseAmount },
+            ],
+          });
+        }
+      }
     }
 
     setModalType(null);
@@ -274,19 +324,51 @@ export function StokTokoPage() {
             />
           </div>
           {modalType === "masuk" && (
-            <div>
-              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
-                Harga beli (opsional, untuk update HPP)
-              </label>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={form.price}
-                onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))}
-                placeholder="0"
-              />
-            </div>
+            <>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
+                  Harga beli (opsional, untuk update HPP)
+                </label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.price}
+                  onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))}
+                  placeholder="0"
+                />
+                <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                  Kosongkan jika produk pakai HPP dari resep (F&B).
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="record_purchase"
+                  checked={form.record_purchase}
+                  onChange={(e) => setForm((f) => ({ ...f, record_purchase: e.target.checked }))}
+                  className="h-4 w-4 rounded border-[var(--border)]"
+                />
+                <label htmlFor="record_purchase" className="text-sm text-[var(--foreground)]">
+                  Catat sebagai pembelian (potong kas)
+                </label>
+              </div>
+              {form.record_purchase && (
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
+                    Jumlah bayar (Rp) *
+                  </label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.purchase_amount}
+                    onChange={(e) => setForm((f) => ({ ...f, purchase_amount: e.target.value }))}
+                    placeholder="0"
+                  />
+                </div>
+              )}
+            </>
           )}
           <div>
             <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Catatan</label>

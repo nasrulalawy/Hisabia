@@ -24,6 +24,7 @@ import { StokTokoPage } from "@/pages/stok/StokTokoPage";
 import { OpnameListPage } from "@/pages/stok/OpnameListPage";
 import { OpnameDetailPage } from "@/pages/stok/OpnameDetailPage";
 import { PembelianPage } from "@/pages/pembelian/PembelianPage";
+import { PembelianBahanPage } from "@/pages/pembelian/PembelianBahanPage";
 import { OutletsPage } from "@/pages/crud/OutletsPage";
 import { PosPage } from "@/pages/pos/PosPage";
 import { LaporanPage } from "@/pages/reports/LaporanPage";
@@ -217,6 +218,7 @@ export default function App() {
           <Route path="dashboard-keuangan" element={<DashboardKeuanganPage />} />
           <Route path="accounting" element={<LaporanPage />} />
           <Route path="pembelian" element={<PembelianPage />} />
+          <Route path="pembelian-bahan" element={<PembelianBahanPage />} />
           <Route path="stok" element={<StokPage />} />
           <Route path="stok-toko" element={<StokTokoPage />} />
           <Route path="opname" element={<OpnameListPage />} />

@@ -6,22 +6,24 @@ import { postJournalEntry } from "@/lib/accounting";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import type { Product } from "@/lib/database.types";
-import type { Warehouse } from "@/lib/database.types";
+import type { Ingredient } from "@/lib/database.types";
 import type { Supplier } from "@/lib/database.types";
 
+interface IngredientWithUnit extends Ingredient {
+  units?: { name: string; symbol: string } | null;
+}
+
 interface LineItem {
-  product_id: string;
-  product_name: string;
+  ingredient_id: string;
+  ingredient_name: string;
   qty: string;
   price: string;
 }
 
-export function PembelianPage() {
+export function PembelianBahanPage() {
   const { orgId, currentOutletId } = useOrg();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
+  const [ingredients, setIngredients] = useState<IngredientWithUnit[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +31,6 @@ export function PembelianPage() {
 
   const [form, setForm] = useState({
     supplier_id: "",
-    warehouse_id: "",
     payment: "cash" as "cash" | "credit",
     due_date: "",
     notes: "",
@@ -39,15 +40,16 @@ export function PembelianPage() {
   async function fetchData() {
     if (!orgId) return;
     setLoading(true);
-    const [supRes, whRes, prodRes] = await Promise.all([
+    const [supRes, ingRes] = await Promise.all([
       supabase.from("suppliers").select("*").eq("organization_id", orgId).order("name"),
-      supabase.from("warehouses").select("*").eq("organization_id", orgId).order("name"),
-      supabase.from("products").select("*").eq("organization_id", orgId).order("name"),
+      supabase
+        .from("ingredients")
+        .select("*, units(name, symbol)")
+        .eq("organization_id", orgId)
+        .order("name"),
     ]);
     setSuppliers(supRes.data ?? []);
-    setWarehouses(whRes.data ?? []);
-    setProducts(prodRes.data ?? []);
-    setForm((f) => ({ ...f, warehouse_id: whRes.data?.[0]?.id ?? f.warehouse_id }));
+    setIngredients(ingRes.data ?? []);
     setLoading(false);
   }
 
@@ -56,18 +58,18 @@ export function PembelianPage() {
   }, [orgId]);
 
   function addItem() {
-    setItems([...items, { product_id: "", product_name: "", qty: "1", price: "0" }]);
+    setItems([...items, { ingredient_id: "", ingredient_name: "", qty: "1", price: "0" }]);
   }
 
   function updateItem(index: number, field: keyof LineItem, value: string) {
     const newItems = [...items];
-    if (field === "product_id") {
-      const p = products.find((x) => x.id === value);
+    if (field === "ingredient_id") {
+      const ing = ingredients.find((x) => x.id === value);
       newItems[index] = {
         ...newItems[index],
-        product_id: value,
-        product_name: p?.name ?? "",
-        price: p ? String(p.cost_price ?? 0) : newItems[index].price,
+        ingredient_id: value,
+        ingredient_name: ing?.name ?? "",
+        price: ing ? String(ing.cost_per_unit ?? 0) : newItems[index].price,
       };
     } else {
       newItems[index] = { ...newItems[index], [field]: value };
@@ -89,13 +91,9 @@ export function PembelianPage() {
     e.preventDefault();
     if (!orgId) return;
 
-    const validItems = items.filter((i) => i.product_id && parsePriceIdr(i.qty) > 0);
+    const validItems = items.filter((i) => i.ingredient_id && parsePriceIdr(i.qty) > 0);
     if (validItems.length === 0) {
-      setError("Tambahkan minimal 1 produk dengan jumlah > 0");
-      return;
-    }
-    if (!form.warehouse_id) {
-      setError("Pilih gudang tujuan");
+      setError("Tambahkan minimal 1 bahan dengan jumlah > 0");
       return;
     }
     if (form.payment === "credit" && !form.supplier_id) {
@@ -106,43 +104,43 @@ export function PembelianPage() {
     setSubmitLoading(true);
     setError(null);
 
+    const supplierName = suppliers.find((s) => s.id === form.supplier_id)?.name ?? "supplier";
+
     try {
       for (const item of validItems) {
-        const product = products.find((p) => p.id === item.product_id);
-        if (!product) continue;
+        const ingredient = ingredients.find((p) => p.id === item.ingredient_id);
+        if (!ingredient) continue;
 
         const qty = parsePriceIdr(item.qty);
         const price = parsePriceIdr(item.price);
-        const currentStock = Number(product.stock ?? 0);
-        const currentCost = Number(product.cost_price ?? 0);
+        const currentStock = Number(ingredient.stock ?? 0);
+        const currentCost = Number(ingredient.cost_per_unit ?? 0);
         const newStock = currentStock + qty;
-        // Produk F&B dengan HPP dari resep: jangan timpa cost_price (tetap dari ingredients).
-        const useRecipeCost = Boolean(product.use_ingredients_for_cost);
-        const newCostPrice =
+        const newCostPerUnit =
           newStock > 0 ? (currentStock * currentCost + qty * price) / newStock : price;
 
-        const { error: movErr } = await supabase.from("stock_movements").insert({
+        await supabase
+          .from("ingredients")
+          .update({
+            stock: newStock,
+            cost_per_unit: newCostPerUnit,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", item.ingredient_id);
+
+        await supabase.from("ingredient_stock_movements").insert({
           organization_id: orgId,
-          warehouse_id: form.warehouse_id,
-          product_id: item.product_id,
+          ingredient_id: item.ingredient_id,
           type: "in",
           quantity: qty,
-          notes: `Pembelian dari ${suppliers.find((s) => s.id === form.supplier_id)?.name ?? "supplier"}`,
+          notes: `Pembelian dari ${supplierName}`,
+          reference_type: "purchase_ingredient",
         });
-
-        if (movErr) throw movErr;
-
-        const productUpdate: { stock: number; cost_price?: number; updated_at: string } = {
-          stock: newStock,
-          updated_at: new Date().toISOString(),
-        };
-        if (!useRecipeCost) productUpdate.cost_price = newCostPrice;
-
-        await supabase.from("products").update(productUpdate).eq("id", item.product_id);
       }
 
       const entryDate = new Date().toISOString().slice(0, 10);
-      const descPurchase = `Pembelian dari ${suppliers.find((s) => s.id === form.supplier_id)?.name ?? "supplier"}`;
+      const descPurchase = `Pembelian bahan dari ${supplierName}`;
+
       if (form.payment === "cash" && totalAmount > 0) {
         const { data: cf, error: cfErr } = await supabase
           .from("cash_flows")
@@ -152,7 +150,7 @@ export function PembelianPage() {
             type: "out",
             amount: totalAmount,
             description: form.notes.trim() ? `${descPurchase} - ${form.notes.trim()}` : descPurchase,
-            reference_type: "purchase",
+            reference_type: "purchase_ingredient",
           })
           .select("id")
           .single();
@@ -199,8 +197,8 @@ export function PembelianPage() {
       }
 
       setItems([]);
-      setSuccessMsg("Pembelian berhasil! Stok telah ditambahkan.");
-      setTimeout(() => setSuccessMsg(null), 4000);
+      setSuccessMsg("Pembelian bahan berhasil. Stok bahan dan HPP produk (dari resep) telah diperbarui.");
+      setTimeout(() => setSuccessMsg(null), 5000);
     } catch (err: unknown) {
       setError((err as { message?: string })?.message ?? "Terjadi kesalahan");
     }
@@ -218,17 +216,12 @@ export function PembelianPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold text-[var(--foreground)]">Pembelian</h2>
+        <h2 className="text-2xl font-semibold text-[var(--foreground)]">Pembelian Bahan</h2>
         <p className="text-[var(--muted-foreground)]">
-          Catat pembelian dari supplier. Stok akan otomatis bertambah.
+          Catat pembelian bahan baku (untuk F&B). Stok bahan bertambah, HPP per satuan dihitung rata-rata tertimbang.
+          Produk yang memakai &quot;HPP dari resep&quot; akan otomatis mengikuti HPP dari bahan. Kas keluar tercatat jika bayar tunai.
         </p>
       </div>
-
-      {warehouses.length === 0 && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Buat gudang terlebih dahulu di menu <strong>Pergudangan</strong> sebelum melakukan pembelian.
-        </div>
-      )}
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -244,7 +237,7 @@ export function PembelianPage() {
       <form onSubmit={handleSubmit}>
         <Card>
           <CardHeader>
-            <CardTitle>Data Pembelian</CardTitle>
+            <CardTitle>Data Pembelian Bahan</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
@@ -264,24 +257,6 @@ export function PembelianPage() {
                 </select>
               </div>
               <div>
-                <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Gudang Tujuan *</label>
-                <select
-                  value={form.warehouse_id}
-                  onChange={(e) => setForm((f) => ({ ...f, warehouse_id: e.target.value }))}
-                  className="h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
-                  required
-                >
-                  <option value="">-- Pilih Gudang --</option>
-                  {warehouses.map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
                 <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Pembayaran</label>
                 <select
                   value={form.payment}
@@ -294,22 +269,20 @@ export function PembelianPage() {
                   <option value="credit">Kredit (bayar nanti)</option>
                 </select>
                 <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                  Tunai: catat ke Arus Kas. Kredit: catat ke Hutang.
+                  Tunai: kas keluar tercatat. Kredit: catat ke Hutang.
                 </p>
               </div>
-              {form.payment === "credit" && (
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
-                    Jatuh Tempo
-                  </label>
-                  <Input
-                    type="date"
-                    value={form.due_date}
-                    onChange={(e) => setForm((f) => ({ ...f, due_date: e.target.value }))}
-                  />
-                </div>
-              )}
             </div>
+            {form.payment === "credit" && (
+              <div>
+                <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Jatuh Tempo</label>
+                <Input
+                  type="date"
+                  value={form.due_date}
+                  onChange={(e) => setForm((f) => ({ ...f, due_date: e.target.value }))}
+                />
+              </div>
+            )}
             <div>
               <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Catatan</label>
               <Input
@@ -323,15 +296,15 @@ export function PembelianPage() {
 
         <Card className="mt-6">
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Item Pembelian</CardTitle>
+            <CardTitle>Item Bahan</CardTitle>
             <Button type="button" variant="outline" size="sm" onClick={addItem}>
-              + Tambah Item
+              + Tambah Bahan
             </Button>
           </CardHeader>
           <CardContent>
             {items.length === 0 ? (
               <p className="py-6 text-center text-[var(--muted-foreground)]">
-                Klik &quot;Tambah Item&quot; untuk menambah produk
+                Klik &quot;Tambah Bahan&quot; untuk menambah item
               </p>
             ) : (
               <div className="space-y-3">
@@ -341,16 +314,16 @@ export function PembelianPage() {
                     className="flex flex-wrap items-end gap-2 rounded-lg border border-[var(--border)] p-3 sm:flex-nowrap"
                   >
                     <div className="min-w-0 flex-1">
-                      <label className="mb-1 block text-xs text-[var(--muted-foreground)]">Produk</label>
+                      <label className="mb-1 block text-xs text-[var(--muted-foreground)]">Bahan</label>
                       <select
-                        value={item.product_id}
-                        onChange={(e) => updateItem(idx, "product_id", e.target.value)}
+                        value={item.ingredient_id}
+                        onChange={(e) => updateItem(idx, "ingredient_id", e.target.value)}
                         className="h-9 w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 text-sm"
                       >
                         <option value="">-- Pilih --</option>
-                        {products.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name}
+                        {ingredients.map((ing) => (
+                          <option key={ing.id} value={ing.id}>
+                            {ing.name} ({ing.units?.symbol ?? ""})
                           </option>
                         ))}
                       </select>
@@ -367,7 +340,7 @@ export function PembelianPage() {
                       />
                     </div>
                     <div className="w-28">
-                      <label className="mb-1 block text-xs text-[var(--muted-foreground)]">Harga Beli</label>
+                      <label className="mb-1 block text-xs text-[var(--muted-foreground)]">Harga/satuan</label>
                       <Input
                         type="number"
                         min="0"
@@ -398,7 +371,7 @@ export function PembelianPage() {
             )}
             <div className="mt-4 flex justify-end">
               <Button type="submit" disabled={items.length === 0 || submitLoading}>
-                {submitLoading ? "Menyimpan..." : "Simpan Pembelian"}
+                {submitLoading ? "Menyimpan..." : "Simpan Pembelian Bahan"}
               </Button>
             </div>
           </CardContent>

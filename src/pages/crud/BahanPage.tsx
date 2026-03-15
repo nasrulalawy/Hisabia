@@ -17,6 +17,7 @@ interface IngredientWithUnit extends Ingredient {
 export function BahanPage() {
   const { orgId } = useOrg();
   const [data, setData] = useState<IngredientWithUnit[]>([]);
+  const [usageByIngredient, setUsageByIngredient] = useState<Record<string, number>>({});
   const [units, setUnits] = useState<Unit[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -40,22 +41,31 @@ export function BahanPage() {
   async function fetchData() {
     if (!orgId) return;
     setLoading(true);
-    const { data: rows, error: err } = await supabase
-      .from("ingredients")
-      .select(
-        `
-        *,
-        units(name, symbol)
-      `
-      )
-      .eq("organization_id", orgId)
-      .order("name");
+    const [ingRes, movRes] = await Promise.all([
+      supabase
+        .from("ingredients")
+        .select("*, units(name, symbol)")
+        .eq("organization_id", orgId)
+        .order("name"),
+      supabase
+        .from("ingredient_stock_movements")
+        .select("ingredient_id, quantity")
+        .eq("organization_id", orgId)
+        .eq("type", "usage"),
+    ]);
     setLoading(false);
-    if (err) {
-      setError(err.message);
+    if (ingRes.error) {
+      setError(ingRes.error.message);
       return;
     }
-    setData(rows ?? []);
+    setData(ingRes.data ?? []);
+
+    const usage: Record<string, number> = {};
+    (movRes.data ?? []).forEach((r: { ingredient_id: string; quantity: number }) => {
+      const id = r.ingredient_id;
+      usage[id] = (usage[id] ?? 0) + Number(r.quantity ?? 0);
+    });
+    setUsageByIngredient(usage);
     setError(null);
   }
 
@@ -171,11 +181,21 @@ export function BahanPage() {
     },
     {
       key: "stock",
-      header: "Stok",
+      header: "Stok (belum terpakai)",
       render: (row) => {
         const s = Number(row.stock ?? 0);
         const sym = row.units?.symbol ?? "";
         return `${s} ${sym}`.trim() || "0";
+      },
+    },
+    {
+      key: "usage",
+      header: "Terpakai (dari penjualan)",
+      render: (row) => {
+        const u = usageByIngredient[row.id] ?? 0;
+        const sym = row.units?.symbol ?? "";
+        if (u === 0) return "-";
+        return `${u} ${sym}`.trim();
       },
     },
     {
@@ -190,7 +210,7 @@ export function BahanPage() {
       <div>
         <h2 className="text-2xl font-semibold text-[var(--foreground)]">Bahan (Ingredients)</h2>
         <p className="text-[var(--muted-foreground)]">
-          Bahan baku untuk resep F&B. Dipakai di produk untuk menghitung HPP dari resep.
+          Bahan baku untuk resep F&B. <strong>Stok</strong> = sisa yang belum terpakai. <strong>Terpakai</strong> = total yang sudah dipakai ke penjualan produk (otomatis berkurang saat POS menjual produk dengan resep).
         </p>
       </div>
       {error && (

@@ -1083,6 +1083,40 @@ export function PosPage() {
       });
     }
 
+    const productIds = [...new Set(cart.map((c) => c.productId))];
+    const { data: recipeRows } = await supabase
+      .from("product_ingredients")
+      .select("product_id, ingredient_id, quantity")
+      .in("product_id", productIds);
+    const usageByIngredient = new Map<string, number>();
+    for (const c of cart) {
+      const qtyBase = c.qty * c.conversionToBase;
+      (recipeRows ?? []).forEach((pi: { product_id: string; ingredient_id: string; quantity: number }) => {
+        if (pi.product_id !== c.productId) return;
+        const prev = usageByIngredient.get(pi.ingredient_id) ?? 0;
+        usageByIngredient.set(pi.ingredient_id, prev + Number(pi.quantity) * qtyBase);
+      });
+    }
+    for (const [ingredientId, qtyUsed] of usageByIngredient) {
+      if (qtyUsed <= 0) continue;
+      const { data: ing } = await supabase.from("ingredients").select("stock").eq("id", ingredientId).single();
+      const current = Number((ing as { stock?: number })?.stock ?? 0);
+      const newIngStock = Math.max(0, current - qtyUsed);
+      await supabase
+        .from("ingredients")
+        .update({ stock: newIngStock, updated_at: new Date().toISOString() })
+        .eq("id", ingredientId);
+      await supabase.from("ingredient_stock_movements").insert({
+        organization_id: orgId,
+        ingredient_id: ingredientId,
+        type: "usage",
+        quantity: qtyUsed,
+        notes: `Pemakaian dari penjualan #${order.id.slice(0, 8)}`,
+        reference_type: "order",
+        reference_id: order.id,
+      });
+    }
+
     const amountPaidNow = debtMode === "full" ? 0 : (debtMode === "partial" ? Math.min(Math.max(0, payNow), finalTotal) : finalTotal);
 
     let cashErr: { message: string } | null = null;
