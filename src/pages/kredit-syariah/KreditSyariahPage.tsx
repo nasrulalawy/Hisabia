@@ -26,7 +26,7 @@ const STATUS_CLASS: Record<KreditSyariahAkadStatus, string> = {
 };
 
 export function KreditSyariahPage() {
-  const { orgId, organizationFeatureGrants, currentOutletType } = useOrg();
+  const { orgId, organizationFeatureGrants, currentOutletType, currentOutletId } = useOrg();
   const { orgId: _routeOrgId } = useParams<{ orgId: string }>();
   const [list, setList] = useState<AkadRow[]>([]);
   const hasGrant = organizationFeatureGrants?.includes("kredit_syariah") ?? false;
@@ -35,7 +35,7 @@ export function KreditSyariahPage() {
   const [filterStatus, setFilterStatus] = useState<KreditSyariahAkadStatus | "">("");
 
   useEffect(() => {
-    if (!orgId) return;
+    if (!orgId || !currentOutletId) return;
     let cancelled = false;
     (async () => {
       setLoading(true);
@@ -43,6 +43,7 @@ export function KreditSyariahPage() {
         .from("kredit_syariah_akad")
         .select("*, customers(name, phone)")
         .eq("organization_id", orgId)
+        .eq("outlet_id", currentOutletId)
         .order("created_at", { ascending: false });
       if (filterStatus) q = q.eq("status", filterStatus);
       const { data } = await q;
@@ -52,7 +53,7 @@ export function KreditSyariahPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [orgId, filterStatus]);
+  }, [orgId, currentOutletId, filterStatus]);
 
   if (!hasGrant || !isMart) {
     return (

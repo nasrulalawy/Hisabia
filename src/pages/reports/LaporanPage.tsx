@@ -43,7 +43,7 @@ function getDefaultDateValue(period: PeriodType): string {
 }
 
 export function LaporanPage() {
-  const { orgId } = useOrg();
+  const { orgId, currentOutletId, currentOutlet } = useOrg();
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<PeriodType>("month");
   const [dateValue, setDateValue] = useState(getDefaultDateValue("month"));
@@ -111,7 +111,7 @@ export function LaporanPage() {
   }
 
   useEffect(() => {
-    if (!orgId) return;
+    if (!orgId || !currentOutletId) return;
     setLoading(true);
     setOrdersError(null);
     const { start, endExclusive, label } = getDateRange();
@@ -121,6 +121,7 @@ export function LaporanPage() {
       .from("orders")
       .select("id, created_at, status, subtotal, discount, total, customer_id")
       .eq("organization_id", orgId)
+      .eq("outlet_id", currentOutletId)
       .eq("status", "paid")
       .gte("created_at", start)
       .lt("created_at", endExclusive)
@@ -130,13 +131,22 @@ export function LaporanPage() {
       .from("cash_flows")
       .select("type, amount")
       .eq("organization_id", orgId)
+      .eq("outlet_id", currentOutletId)
       .gte("created_at", start)
       .lt("created_at", endExclusive);
 
     Promise.all([
       ordersQuery,
-      supabase.from("receivables").select("amount, paid").eq("organization_id", orgId),
-      supabase.from("payables").select("amount, paid").eq("organization_id", orgId),
+      supabase
+        .from("receivables")
+        .select("amount, paid")
+        .eq("organization_id", orgId)
+        .eq("outlet_id", currentOutletId),
+      supabase
+        .from("payables")
+        .select("amount, paid")
+        .eq("organization_id", orgId)
+        .eq("outlet_id", currentOutletId),
       cashQuery,
     ]).then(async ([ordersRes, recRes, payRes, cashRes]) => {
       if (ordersRes.error) {
@@ -246,7 +256,7 @@ export function LaporanPage() {
 
       setLoading(false);
     });
-  }, [orgId, period, dateValue, refreshKey]);
+  }, [orgId, currentOutletId, period, dateValue, refreshKey]);
 
   async function handleDeleteOrder() {
     if (!deleteTarget) return;
@@ -271,7 +281,9 @@ export function LaporanPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-semibold text-[var(--foreground)]">Laporan</h2>
-          <p className="text-[var(--muted-foreground)]">Ringkasan keuangan, penjualan, dan laba rugi.</p>
+          <p className="text-[var(--muted-foreground)]">
+            Ringkasan keuangan outlet {currentOutlet?.name ?? "aktif"} — penjualan, dan laba rugi.
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <select

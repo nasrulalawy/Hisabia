@@ -32,7 +32,7 @@ export function ArusKasPage() {
       .eq("organization_id", orgId)
       .order("created_at", { ascending: false });
     if (currentOutletId) {
-      query = query.or(`outlet_id.is.null,outlet_id.eq.${currentOutletId}`);
+      query = query.eq("outlet_id", currentOutletId);
     }
     const { data: rows, error: err } = await query;
     setLoading(false);

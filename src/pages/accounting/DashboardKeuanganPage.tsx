@@ -17,8 +17,6 @@ import {
   Legend,
 } from "recharts";
 
-type AccountType = "asset" | "liability" | "equity" | "revenue" | "expense";
-
 interface PosisiKeuanganItem {
   name: string;
   value: number;
@@ -40,7 +38,7 @@ const CHART_COLORS = {
 };
 
 export function DashboardKeuanganPage() {
-  const { orgId } = useOrg();
+  const { orgId, currentOutletId } = useOrg();
   const [loading, setLoading] = useState(true);
   const [kas, setKas] = useState(0);
   const [piutang, setPiutang] = useState(0);
@@ -52,84 +50,73 @@ export function DashboardKeuanganPage() {
   const [chartPenjualanHarian, setChartPenjualanHarian] = useState<PenjualanHarianItem[]>([]);
 
   useEffect(() => {
-    if (!orgId) return;
+    if (!orgId || !currentOutletId) return;
     setLoading(true);
-    const today = new Date().toISOString().slice(0, 10);
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
     (async () => {
-      const { data: coa } = await supabase
-        .from("chart_of_accounts")
-        .select("id, code, account_type")
-        .eq("organization_id", orgId);
-      if (!coa?.length) {
-        setLoading(false);
-        return;
-      }
-      const { data: entries } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("organization_id", orgId)
-        .lte("entry_date", today);
-      const entryIds = (entries ?? []).map((e) => e.id);
-      let byAccount: Record<string, { debit: number; credit: number }> = {};
-      if (entryIds.length > 0) {
-        const { data: lines } = await supabase
-          .from("journal_entry_lines")
-          .select("account_id, debit, credit")
-          .in("journal_entry_id", entryIds);
-        (lines ?? []).forEach((l: { account_id: string; debit: number; credit: number }) => {
-          if (!byAccount[l.account_id]) byAccount[l.account_id] = { debit: 0, credit: 0 };
-          byAccount[l.account_id].debit += Number(l.debit) || 0;
-          byAccount[l.account_id].credit += Number(l.credit) || 0;
-        });
-      }
-      const codeById: Record<string, string> = {};
-      const typeById: Record<string, AccountType> = {};
-      coa.forEach((a: { id: string; code: string; account_type: string }) => {
-        codeById[a.id] = a.code;
-        typeById[a.id] = a.account_type as AccountType;
+      // Isolasi outlet: kas & piutang/hutang dari data outlet, bukan jurnal org-wide
+      const [cashRes, recRes, payRes, prodRes, ordersTodayRes] = await Promise.all([
+        supabase
+          .from("cash_flows")
+          .select("type, amount")
+          .eq("organization_id", orgId)
+          .eq("outlet_id", currentOutletId),
+        supabase
+          .from("receivables")
+          .select("amount, paid")
+          .eq("organization_id", orgId)
+          .eq("outlet_id", currentOutletId),
+        supabase
+          .from("payables")
+          .select("amount, paid")
+          .eq("organization_id", orgId)
+          .eq("outlet_id", currentOutletId),
+        supabase
+          .from("products")
+          .select("cost_price, stock")
+          .eq("organization_id", orgId),
+        supabase
+          .from("orders")
+          .select("total")
+          .eq("organization_id", orgId)
+          .eq("outlet_id", currentOutletId)
+          .eq("status", "paid")
+          .gte("created_at", todayStart.toISOString()),
+      ]);
+
+      let vKas = 0;
+      (cashRes.data ?? []).forEach((c: { type: string; amount: number }) => {
+        const amt = Number(c.amount) || 0;
+        if (c.type === "in") vKas += amt;
+        else vKas -= amt;
       });
-      const normalDebit: Record<AccountType, boolean> = {
-        asset: true,
-        expense: true,
-        liability: false,
-        equity: false,
-        revenue: false,
-      };
-      let vKas = 0,
-        vPiutang = 0,
-        vHutang = 0,
-        vPersediaan = 0,
-        totalRevenue = 0,
-        totalExpense = 0;
-      coa.forEach((a: { id: string; code: string; account_type: string }) => {
-        const t = byAccount[a.id] ?? { debit: 0, credit: 0 };
-        const balance = normalDebit[a.account_type as AccountType]
-          ? t.debit - t.credit
-          : t.credit - t.debit;
-        if (a.code === "1-1") vKas = balance;
-        if (a.code === "1-2") vPiutang = balance;
-        if (a.code === "2-1") vHutang = balance;
-        if (a.code === "1-3") vPersediaan = balance;
-        if (a.account_type === "revenue") totalRevenue += balance;
-        if (a.account_type === "expense") totalExpense += balance;
+
+      let vPiutang = 0;
+      (recRes.data ?? []).forEach((r: { amount: number; paid?: number }) => {
+        vPiutang += Number(r.amount) - Number(r.paid ?? 0);
       });
+
+      let vHutang = 0;
+      (payRes.data ?? []).forEach((r: { amount: number; paid?: number }) => {
+        vHutang += Number(r.amount) - Number(r.paid ?? 0);
+      });
+
+      let vPersediaan = 0;
+      (prodRes.data ?? []).forEach((p: { cost_price: number; stock: number }) => {
+        vPersediaan += Number(p.cost_price ?? 0) * Number(p.stock ?? 0);
+      });
+
+      const penjualan = (ordersTodayRes.data ?? []).reduce(
+        (s, o: { total: number }) => s + Number(o.total),
+        0
+      );
+      setPenjualanHariIni(penjualan);
       setKas(vKas);
       setPiutang(vPiutang);
       setHutang(vHutang);
       setPersediaan(vPersediaan);
-      setLabaPeriode(totalRevenue - totalExpense);
-
-      const { data: ordersToday } = await supabase
-        .from("orders")
-        .select("total")
-        .eq("organization_id", orgId)
-        .eq("status", "paid")
-        .gte("created_at", todayStart.toISOString());
-      const penjualan = (ordersToday ?? []).reduce((s, o) => s + Number(o.total), 0);
-      setPenjualanHariIni(penjualan);
 
       const daysBack = 14;
       const rangeStart = new Date();
@@ -139,8 +126,11 @@ export function DashboardKeuanganPage() {
         .from("orders")
         .select("total, created_at")
         .eq("organization_id", orgId)
+        .eq("outlet_id", currentOutletId)
         .eq("status", "paid")
         .gte("created_at", rangeStart.toISOString());
+
+      let penjualanPeriode = 0;
       const dayMap: Record<string, number> = {};
       for (let i = daysBack - 1; i >= 0; i--) {
         const d = new Date();
@@ -149,30 +139,49 @@ export function DashboardKeuanganPage() {
       }
       (ordersRange ?? []).forEach((o: { total: number; created_at: string }) => {
         const key = o.created_at.slice(0, 10);
-        if (key in dayMap) dayMap[key] += Number(o.total);
+        const amt = Number(o.total);
+        penjualanPeriode += amt;
+        if (key in dayMap) dayMap[key] += amt;
       });
+
+      // Laba sederhana outlet: penjualan periode - kas keluar periode
+      let cashOutPeriode = 0;
+      (cashRes.data ?? []).forEach((c: { type: string; amount: number }) => {
+        if (c.type === "out") cashOutPeriode += Number(c.amount) || 0;
+      });
+      const labaRugi = penjualanPeriode - cashOutPeriode;
+      setLabaPeriode(labaRugi);
+
       setChartPenjualanHarian(
         Object.entries(dayMap)
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([date, total]) => ({
             date,
             total,
-            label: new Date(date + "T12:00:00").toLocaleDateString("id-ID", { day: "numeric", month: "short" }),
+            label: new Date(date + "T12:00:00").toLocaleDateString("id-ID", {
+              day: "numeric",
+              month: "short",
+            }),
           }))
       );
 
-      const labaRugi = totalRevenue - totalExpense;
-      setChartPosisi([
-        { name: "Kas", value: vKas, color: CHART_COLORS.kas },
-        { name: "Piutang", value: vPiutang, color: CHART_COLORS.piutang },
-        { name: "Hutang", value: Math.abs(vHutang), color: CHART_COLORS.hutang },
-        { name: "Persediaan", value: vPersediaan, color: CHART_COLORS.persediaan },
-        { name: labaRugi >= 0 ? "Laba" : "Rugi", value: Math.abs(labaRugi), color: CHART_COLORS.laba },
-      ].filter((i) => i.value > 0));
+      setChartPosisi(
+        [
+          { name: "Kas", value: Math.max(vKas, 0), color: CHART_COLORS.kas },
+          { name: "Piutang", value: vPiutang, color: CHART_COLORS.piutang },
+          { name: "Hutang", value: Math.abs(vHutang), color: CHART_COLORS.hutang },
+          { name: "Persediaan", value: vPersediaan, color: CHART_COLORS.persediaan },
+          {
+            name: labaRugi >= 0 ? "Laba" : "Rugi",
+            value: Math.abs(labaRugi),
+            color: CHART_COLORS.laba,
+          },
+        ].filter((i) => i.value > 0)
+      );
 
       setLoading(false);
     })();
-  }, [orgId]);
+  }, [orgId, currentOutletId]);
 
   if (loading) {
     return (

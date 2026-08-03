@@ -11,7 +11,7 @@ type InvoiceLineRow = SalesInvoiceLine & { quantity_delivered: string };
 
 export function PengirimanFormPage() {
   const { id: deliveryId } = useParams<{ id: string }>();
-  const { orgId } = useOrg();
+  const { orgId, currentOutletId } = useOrg();
   const navigate = useNavigate();
   const isEdit = !!deliveryId;
 
@@ -30,12 +30,14 @@ export function PengirimanFormPage() {
 
   async function fetchInvoices() {
     if (!orgId) return;
-    const { data } = await supabase
+    let q = supabase
       .from("sales_invoices")
       .select("id, number, customer_id")
       .eq("organization_id", orgId)
       .neq("status", "canceled")
       .order("invoice_date", { ascending: false });
+    if (currentOutletId) q = q.eq("outlet_id", currentOutletId);
+    const { data } = await q;
     setInvoices(data ?? []);
   }
 
@@ -149,6 +151,7 @@ export function PengirimanFormPage() {
           .from("sales_deliveries")
           .insert({
             organization_id: orgId,
+            outlet_id: currentOutletId,
             number: num ?? `DO-${form.delivery_date}-001`,
             sales_invoice_id: form.sales_invoice_id,
             delivery_date: form.delivery_date,

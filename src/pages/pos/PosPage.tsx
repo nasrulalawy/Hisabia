@@ -197,17 +197,19 @@ export function PosPage() {
     }
     let cancelled = false;
     (async () => {
-      const { data } = await supabase
+      let q = supabase
         .from("receivables")
         .select("amount, paid")
         .eq("organization_id", orgId)
         .eq("customer_id", selectedCustomerId);
+      if (currentOutletId) q = q.eq("outlet_id", currentOutletId);
+      const { data } = await q;
       if (cancelled) return;
       const total = (data ?? []).reduce((sum, r) => sum + (Number(r.amount) - Number(r.paid ?? 0)), 0);
       setCustomerSisaPiutang(Math.max(0, total));
     })();
     return () => { cancelled = true; };
-  }, [orgId, selectedCustomerId]);
+  }, [orgId, currentOutletId, selectedCustomerId]);
 
   useEffect(() => {
     if (cart.length === 0) setSelectedCartIndex(null);
@@ -1137,6 +1139,7 @@ export function PosPage() {
     if (selectedCustomerId && (finalTotal - amountPaidNow) > 0) {
       await supabase.from("receivables").insert({
         organization_id: orgId,
+        outlet_id: currentOutletId,
         customer_id: selectedCustomerId,
         order_id: order.id,
         amount: finalTotal,

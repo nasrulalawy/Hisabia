@@ -12,7 +12,7 @@ interface DeliveryWithInvoice extends SalesDelivery {
 }
 
 export function PengirimanListPage() {
-  const { orgId } = useOrg();
+  const { orgId, currentOutletId } = useOrg();
   const navigate = useNavigate();
   const [data, setData] = useState<DeliveryWithInvoice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,12 +21,13 @@ export function PengirimanListPage() {
   const [error, setError] = useState<string | null>(null);
 
   async function fetchData() {
-    if (!orgId) return;
+    if (!orgId || !currentOutletId) return;
     setLoading(true);
     const { data: rows, error: err } = await supabase
       .from("sales_deliveries")
       .select("*, sales_invoices(number)")
       .eq("organization_id", orgId)
+      .eq("outlet_id", currentOutletId)
       .order("delivery_date", { ascending: false });
     if (err) {
       setLoading(false);
@@ -40,7 +41,7 @@ export function PengirimanListPage() {
 
   useEffect(() => {
     fetchData();
-  }, [orgId]);
+  }, [orgId, currentOutletId]);
 
   async function handleDelete() {
     if (!deleteTarget) return;

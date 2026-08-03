@@ -32,7 +32,7 @@ interface CashFlowData {
 
 export function Dashboard() {
   const { orgId } = useParams<{ orgId: string }>();
-  const { orgId: ctxOrgId } = useOrg();
+  const { orgId: ctxOrgId, currentOutletId, currentOutlet } = useOrg();
   const baseOrgId = orgId ?? ctxOrgId;
 
   const [loading, setLoading] = useState(true);
@@ -59,8 +59,7 @@ export function Dashboard() {
   >([]);
 
   useEffect(() => {
-    if (!baseOrgId) return;
-    if (!baseOrgId) return;
+    if (!baseOrgId || !currentOutletId) return;
     setLoading(true);
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
@@ -69,28 +68,32 @@ export function Dashboard() {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
     Promise.all([
-      // Orders - penjualan
+      // Orders - penjualan outlet aktif saja
       supabase
         .from("orders")
         .select("total, created_at")
         .eq("organization_id", baseOrgId)
+        .eq("outlet_id", currentOutletId)
         .eq("status", "paid"),
-      // Cash flows
+      // Cash flows outlet aktif
       supabase
         .from("cash_flows")
         .select("type, amount, created_at")
         .eq("organization_id", baseOrgId)
+        .eq("outlet_id", currentOutletId)
         .gte("created_at", new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString()),
-      // Receivables
+      // Receivables outlet aktif
       supabase
         .from("receivables")
         .select("amount, paid")
-        .eq("organization_id", baseOrgId),
-      // Payables
+        .eq("organization_id", baseOrgId)
+        .eq("outlet_id", currentOutletId),
+      // Payables outlet aktif
       supabase
         .from("payables")
         .select("amount, paid")
-        .eq("organization_id", baseOrgId),
+        .eq("organization_id", baseOrgId)
+        .eq("outlet_id", currentOutletId),
       // Products & stock value
       supabase
         .from("products")
@@ -98,11 +101,12 @@ export function Dashboard() {
         .eq("organization_id", baseOrgId),
       // Outlets count
       supabase.from("outlets").select("id", { count: "exact", head: true }).eq("organization_id", baseOrgId),
-      // Recent orders
+      // Recent orders outlet aktif
       supabase
         .from("orders")
         .select("id, total, status, created_at")
         .eq("organization_id", baseOrgId)
+        .eq("outlet_id", currentOutletId)
         .order("created_at", { ascending: false })
         .limit(5),
     ]).then(
@@ -212,7 +216,7 @@ export function Dashboard() {
         setLoading(false);
       }
     );
-  }, [baseOrgId, period]);
+  }, [baseOrgId, currentOutletId, period]);
 
   if (loading && !stats.outletCount && !stats.productCount) {
     return (
@@ -226,7 +230,9 @@ export function Dashboard() {
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-semibold text-[var(--foreground)]">Dashboard</h2>
-        <p className="text-[var(--muted-foreground)]">Ringkasan usaha dan aktivitas terbaru.</p>
+        <p className="text-[var(--muted-foreground)]">
+          Ringkasan {currentOutlet?.name ? `outlet ${currentOutlet.name}` : "usaha"} dan aktivitas terbaru.
+        </p>
       </div>
 
       {/* Stats cards */}

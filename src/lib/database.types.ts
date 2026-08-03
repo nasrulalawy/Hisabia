@@ -313,6 +313,7 @@ export interface CashFlow {
 export interface Receivable {
   id: string;
   organization_id: string;
+  outlet_id: string | null;
   customer_id: string | null;
   order_id: string | null;
   amount: number;
@@ -411,6 +412,7 @@ export interface KreditSyariahAngsuran {
 export interface Payable {
   id: string;
   organization_id: string;
+  outlet_id: string | null;
   supplier_id: string | null;
   amount: number;
   paid: number;
@@ -537,6 +539,7 @@ export type SalesDeliveryStatus = "pending" | "partial" | "delivered";
 export interface SalesQuote {
   id: string;
   organization_id: string;
+  outlet_id: string | null;
   number: string;
   customer_id: string;
   quote_date: string;
@@ -566,6 +569,7 @@ export interface SalesQuoteLine {
 export interface SalesInvoice {
   id: string;
   organization_id: string;
+  outlet_id: string | null;
   number: string;
   sales_quote_id: string | null;
   customer_id: string;
@@ -596,6 +600,7 @@ export interface SalesInvoiceLine {
 export interface SalesDelivery {
   id: string;
   organization_id: string;
+  outlet_id: string | null;
   number: string;
   sales_invoice_id: string;
   delivery_date: string;

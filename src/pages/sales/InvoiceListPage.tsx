@@ -12,7 +12,7 @@ interface InvoiceWithCustomer extends SalesInvoice {
 }
 
 export function InvoiceListPage() {
-  const { orgId } = useOrg();
+  const { orgId, currentOutletId } = useOrg();
   const navigate = useNavigate();
   const [data, setData] = useState<InvoiceWithCustomer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,12 +21,13 @@ export function InvoiceListPage() {
   const [error, setError] = useState<string | null>(null);
 
   async function fetchData() {
-    if (!orgId) return;
+    if (!orgId || !currentOutletId) return;
     setLoading(true);
     const { data: rows, error: err } = await supabase
       .from("sales_invoices")
       .select("*, customers(name)")
       .eq("organization_id", orgId)
+      .eq("outlet_id", currentOutletId)
       .order("invoice_date", { ascending: false });
     setLoading(false);
     if (err) {
@@ -39,7 +40,7 @@ export function InvoiceListPage() {
 
   useEffect(() => {
     fetchData();
-  }, [orgId]);
+  }, [orgId, currentOutletId]);
 
   async function handleDelete() {
     if (!deleteTarget) return;

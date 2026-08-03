@@ -52,25 +52,33 @@ interface PayableRow {
 }
 
 export function LaporanAgingPage() {
-  const { orgId } = useOrg();
+  const { orgId, currentOutletId } = useOrg();
   const [tab, setTab] = useState<Tab>("piutang");
   const [receivables, setReceivables] = useState<ReceivableRow[]>([]);
   const [payables, setPayables] = useState<PayableRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!orgId) return;
+    if (!orgId || !currentOutletId) return;
     setLoading(true);
     (async () => {
       const [recRes, payRes] = await Promise.all([
-        supabase.from("receivables").select("id, amount, paid, due_date, notes, customers(name)").eq("organization_id", orgId),
-        supabase.from("payables").select("id, amount, paid, due_date, notes, suppliers(name)").eq("organization_id", orgId),
+        supabase
+          .from("receivables")
+          .select("id, amount, paid, due_date, notes, customers(name)")
+          .eq("organization_id", orgId)
+          .eq("outlet_id", currentOutletId),
+        supabase
+          .from("payables")
+          .select("id, amount, paid, due_date, notes, suppliers(name)")
+          .eq("organization_id", orgId)
+          .eq("outlet_id", currentOutletId),
       ]);
       setReceivables((recRes.data as unknown as ReceivableRow[]) ?? []);
       setPayables((payRes.data as unknown as PayableRow[]) ?? []);
       setLoading(false);
     })();
-  }, [orgId]);
+  }, [orgId, currentOutletId]);
 
   function buildAging<T extends { amount: number; paid: number; due_date: string | null }>(
     rows: T[],

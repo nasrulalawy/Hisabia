@@ -12,15 +12,19 @@ const OUTLET_COOKIE = "hisabia-current-outlet";
 export function OutletSwitcher({
   outlets,
   currentOutletId,
+  locked = false,
   onSwitch,
 }: {
   outlets: Outlet[];
   currentOutletId: string | null;
+  /** Karyawan terikat outlet: tidak bisa pindah ke outlet lain */
+  locked?: boolean;
   onSwitch?: () => void;
 }) {
   if (!outlets.length) return null;
 
   function selectOutlet(outletId: string) {
+    if (locked) return;
     document.cookie = `${OUTLET_COOKIE}=${outletId};path=/;max-age=31536000`;
     onSwitch?.();
     window.location.reload();
@@ -39,7 +43,9 @@ export function OutletSwitcher({
         id="outlet-switcher"
         value={current?.id ?? ""}
         onChange={(e) => selectOutlet(e.target.value)}
-        className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+        disabled={locked || outlets.length <= 1}
+        title={locked ? "Akun ini terikat ke outlet ini" : undefined}
+        className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-70"
       >
         {outlets.map((o) => (
           <option key={o.id} value={o.id}>

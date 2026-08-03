@@ -12,7 +12,7 @@ type LineRow = { id?: string; description: string; quantity: string; unit_price:
 
 export function InvoiceFormPage() {
   const { id: invoiceId } = useParams<{ id: string }>();
-  const { orgId } = useOrg();
+  const { orgId, currentOutletId } = useOrg();
   const navigate = useNavigate();
   const isEdit = !!invoiceId;
 
@@ -56,9 +56,16 @@ export function InvoiceFormPage() {
 
   async function fetchOptions() {
     if (!orgId) return;
+    let quoteQ = supabase
+      .from("sales_quotes")
+      .select("id, number, customer_id")
+      .eq("organization_id", orgId)
+      .eq("status", "accepted")
+      .order("quote_date", { ascending: false });
+    if (currentOutletId) quoteQ = quoteQ.eq("outlet_id", currentOutletId);
     const [custRes, quoteRes] = await Promise.all([
       supabase.from("customers").select("id, name").eq("organization_id", orgId).order("name"),
-      supabase.from("sales_quotes").select("id, number, customer_id").eq("organization_id", orgId).eq("status", "accepted").order("quote_date", { ascending: false }),
+      quoteQ,
     ]);
     setCustomers(custRes.data ?? []);
     setQuotes(quoteRes.data ?? []);
@@ -192,6 +199,7 @@ export function InvoiceFormPage() {
           .from("sales_invoices")
           .insert({
             organization_id: orgId,
+            outlet_id: currentOutletId,
             number: num ?? `INV-${form.invoice_date}-001`,
             sales_quote_id: form.sales_quote_id || null,
             customer_id: form.customer_id,

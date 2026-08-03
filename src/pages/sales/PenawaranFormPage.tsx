@@ -12,7 +12,7 @@ type LineRow = { id?: string; description: string; quantity: string; unit_price:
 
 export function PenawaranFormPage() {
   const { id: quoteId } = useParams<{ id: string }>();
-  const { orgId } = useOrg();
+  const { orgId, currentOutletId } = useOrg();
   const navigate = useNavigate();
   const isEdit = !!quoteId;
 
@@ -166,6 +166,7 @@ export function PenawaranFormPage() {
           .from("sales_quotes")
           .insert({
             organization_id: orgId,
+            outlet_id: currentOutletId,
             number: num ?? `PQ-${form.quote_date}-001`,
             customer_id: form.customer_id,
             quote_date: form.quote_date,

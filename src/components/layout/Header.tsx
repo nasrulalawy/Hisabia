@@ -8,6 +8,7 @@ interface HeaderProps {
   outlets?: Outlet[] | null;
   currentOutletId?: string | null;
   orgId?: string;
+  outletLocked?: boolean;
   onMenuClick?: () => void;
 }
 
@@ -17,6 +18,7 @@ export function Header({
   outlets,
   currentOutletId,
   orgId,
+  outletLocked = false,
   onMenuClick,
 }: HeaderProps) {
   return (
@@ -45,14 +47,24 @@ export function Header({
         <h1 className="truncate text-lg font-semibold text-[var(--foreground)] sm:text-xl">{title}</h1>
         {outlets && outlets.length > 0 && orgId && (
           <div className="hidden shrink-0 sm:block">
-            <OutletSwitcher outlets={outlets} currentOutletId={currentOutletId ?? null} onSwitch={() => {}} />
+            <OutletSwitcher
+              outlets={outlets}
+              currentOutletId={currentOutletId ?? null}
+              locked={outletLocked}
+              onSwitch={() => {}}
+            />
           </div>
         )}
       </div>
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
         {outlets && outlets.length > 0 && orgId && (
           <div className="sm:hidden">
-            <OutletSwitcher outlets={outlets} currentOutletId={currentOutletId ?? null} onSwitch={() => {}} />
+            <OutletSwitcher
+              outlets={outlets}
+              currentOutletId={currentOutletId ?? null}
+              locked={outletLocked}
+              onSwitch={() => {}}
+            />
           </div>
         )}
         <div className="flex items-center gap-2 rounded-lg border border-[var(--border)] px-2 py-1.5 sm:px-3 sm:py-2">

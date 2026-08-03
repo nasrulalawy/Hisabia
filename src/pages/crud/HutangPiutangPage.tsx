@@ -49,6 +49,7 @@ function PiutangSection() {
       .from("receivables")
       .select("*, customers(name, phone)")
       .eq("organization_id", orgId)
+      .eq("outlet_id", currentOutletId!)
       .order("created_at", { ascending: false });
     setLoading(false);
     if (err) {
@@ -61,7 +62,7 @@ function PiutangSection() {
 
   useEffect(() => {
     fetchData();
-  }, [orgId]);
+  }, [orgId, currentOutletId]);
 
   function openAdd() {
     setEditing(null);
@@ -91,6 +92,7 @@ function PiutangSection() {
     const paidAmount = parseFloat(form.paid) || 0;
     const payload = {
       organization_id: orgId,
+      outlet_id: currentOutletId,
       customer_id: form.customer_id || null,
       amount: parseFloat(form.amount),
       paid: paidAmount,
@@ -329,6 +331,7 @@ function HutangSection() {
       .from("payables")
       .select("*, suppliers(name)")
       .eq("organization_id", orgId)
+      .eq("outlet_id", currentOutletId!)
       .order("created_at", { ascending: false });
     setLoading(false);
     if (err) {
@@ -341,7 +344,7 @@ function HutangSection() {
 
   useEffect(() => {
     fetchData();
-  }, [orgId]);
+  }, [orgId, currentOutletId]);
 
   function openAdd() {
     setEditing(null);
@@ -371,6 +374,7 @@ function HutangSection() {
     const paidAmount = parseFloat(form.paid) || 0;
     const payload = {
       organization_id: orgId,
+      outlet_id: currentOutletId,
       supplier_id: form.supplier_id || null,
       amount: parseFloat(form.amount),
       paid: paidAmount,

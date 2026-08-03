@@ -92,13 +92,6 @@ export function OrgLayout() {
         .order("created_at", { ascending: true });
       setOutlets(outletsData ?? []);
 
-      const cookieOutlet = getOutletIdFromCookie();
-      const validOutlet =
-        cookieOutlet && outletsData?.some((o) => o.id === cookieOutlet)
-          ? cookieOutlet
-          : outletsData?.[0]?.id ?? null;
-      setCurrentOutletId(validOutlet);
-
       const { data: sub } = await supabase
         .from("subscriptions")
         .select("status, current_period_end")
@@ -124,9 +117,14 @@ export function OrgLayout() {
         .eq("organization_id", orgId)
         .eq("user_id", u.id)
         .maybeSingle();
+
+      let lockedOutletId: string | null = null;
       if (employeeData) {
         const emp = employeeData as Employee;
         setCurrentEmployee(emp);
+        if (emp.outlet_id && outletsData?.some((o) => o.id === emp.outlet_id)) {
+          lockedOutletId = emp.outlet_id;
+        }
         if (emp.employee_role_id) {
           const { data: empPermRows } = await supabase
             .from("employee_role_feature_permissions")
@@ -143,6 +141,18 @@ export function OrgLayout() {
       } else {
         setCurrentEmployee(null);
         setEmployeeFeaturePermissions(null);
+      }
+
+      // Karyawan dengan outlet tetap: kunci ke outlet tersebut. Owner bebas switch.
+      const cookieOutlet = getOutletIdFromCookie();
+      const validOutlet = lockedOutletId
+        ? lockedOutletId
+        : cookieOutlet && outletsData?.some((o) => o.id === cookieOutlet)
+          ? cookieOutlet
+          : outletsData?.[0]?.id ?? null;
+      setCurrentOutletId(validOutlet);
+      if (lockedOutletId) {
+        document.cookie = `${OUTLET_COOKIE}=${lockedOutletId};path=/;max-age=31536000`;
       }
 
       setLoading(false);
@@ -252,9 +262,14 @@ export function OrgLayout() {
               name: profile?.full_name ?? user?.email ?? undefined,
               role,
             }}
-            outlets={outlets}
+            outlets={
+              currentEmployee?.outlet_id
+                ? (outlets ?? []).filter((o) => o.id === currentEmployee.outlet_id)
+                : outlets
+            }
             currentOutletId={currentOutletId}
             orgId={orgId}
+            outletLocked={!!currentEmployee?.outlet_id}
             onMenuClick={() => setSidebarMobileOpen(true)}
           />
           <main className="flex-1 overflow-auto p-4 sm:p-6">

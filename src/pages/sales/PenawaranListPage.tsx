@@ -12,7 +12,7 @@ interface QuoteWithCustomer extends SalesQuote {
 }
 
 export function PenawaranListPage() {
-  const { orgId } = useOrg();
+  const { orgId, currentOutletId } = useOrg();
   const navigate = useNavigate();
   const [data, setData] = useState<QuoteWithCustomer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,12 +21,13 @@ export function PenawaranListPage() {
   const [error, setError] = useState<string | null>(null);
 
   async function fetchData() {
-    if (!orgId) return;
+    if (!orgId || !currentOutletId) return;
     setLoading(true);
     const { data: rows, error: err } = await supabase
       .from("sales_quotes")
       .select("*, customers(name)")
       .eq("organization_id", orgId)
+      .eq("outlet_id", currentOutletId)
       .order("quote_date", { ascending: false });
     setLoading(false);
     if (err) {
@@ -39,7 +40,7 @@ export function PenawaranListPage() {
 
   useEffect(() => {
     fetchData();
-  }, [orgId]);
+  }, [orgId, currentOutletId]);
 
   async function handleDelete() {
     if (!deleteTarget) return;
