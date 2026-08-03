@@ -56,7 +56,7 @@ const PRICE_TYPES = [
 
 export function ProdukDetailPage() {
   const { orgId, id: productId } = useParams<{ orgId: string; id: string }>();
-  const { orgId: ctxOrgId, currentOutletId, currentOutlet } = useOrg();
+  const { orgId: ctxOrgId, currentOutletId } = useOrg();
   const navigate = useNavigate();
   const baseOrgId = orgId ?? ctxOrgId;
 
