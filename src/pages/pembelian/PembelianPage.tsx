@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/Input";
 import type { Product } from "@/lib/database.types";
 import type { Warehouse } from "@/lib/database.types";
 import type { Supplier } from "@/lib/database.types";
-import { applyOutletStockToProducts, fetchOutletStockMap, setOutletProductStock } from "@/lib/outletStock";
+import { applyOutletProductToProducts, fetchOutletProductMap, setOutletProductStock, setOutletProductCostPrice } from "@/lib/outletStock";
 
 interface LineItem {
   product_id: string;
@@ -48,11 +48,11 @@ export function PembelianPage() {
     setSuppliers(supRes.data ?? []);
     setWarehouses(whRes.data ?? []);
     const raw = (prodRes.data ?? []) as Product[];
-    const stockMap = await fetchOutletStockMap(
+    const outletMap = await fetchOutletProductMap(
       currentOutletId,
       raw.map((p) => p.id)
     );
-    setProducts(applyOutletStockToProducts(raw, stockMap));
+    setProducts(applyOutletProductToProducts(raw, outletMap));
     setForm((f) => ({ ...f, warehouse_id: whRes.data?.[0]?.id ?? f.warehouse_id }));
     setLoading(false);
   }
@@ -148,10 +148,7 @@ export function PembelianPage() {
         if (stockErr) throw new Error(stockErr);
 
         if (!useRecipeCost) {
-          await supabase
-            .from("products")
-            .update({ cost_price: newCostPrice, updated_at: new Date().toISOString() })
-            .eq("id", item.product_id);
+          await setOutletProductCostPrice(orgId, currentOutletId, item.product_id, newCostPrice);
         }
       }
 

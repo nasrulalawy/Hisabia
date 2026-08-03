@@ -437,6 +437,8 @@ export interface OutletProductStock {
   outlet_id: string;
   product_id: string;
   stock: number;
+  selling_price: number | null;
+  cost_price: number | null;
   updated_at: string;
 }
 

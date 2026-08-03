@@ -7,11 +7,11 @@ import { Input } from "@/components/ui/Input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { ProductPhotoScanModal } from "@/components/product/ProductPhotoScanModal";
 import { parsePriceIdr } from "@/lib/utils";
-import { fetchOutletStockMap, setOutletProductStock } from "@/lib/outletStock";
+import { fetchOutletProductMap, setOutletProductStock, setOutletProductSellingPrice, setOutletProductCostPrice } from "@/lib/outletStock";
 
 export function ProdukFormPage() {
   const { orgId, id: productId } = useParams<{ orgId: string; id?: string }>();
-  const { orgId: ctxOrgId, currentOutletId } = useOrg();
+  const { orgId: ctxOrgId, currentOutletId, currentOutlet } = useOrg();
   const navigate = useNavigate();
   const isEdit = !!productId;
   const baseOrgId = orgId ?? ctxOrgId;
@@ -86,8 +86,14 @@ export function ProdukFormPage() {
       image_url: data.image_url ?? "",
     });
     if (currentOutletId && productId) {
-      const stockMap = await fetchOutletStockMap(currentOutletId, [productId]);
-      setForm((f) => ({ ...f, stock: fmt(stockMap[productId] ?? 0) }));
+      const outletMap = await fetchOutletProductMap(currentOutletId, [productId]);
+      const row = outletMap[productId];
+      setForm((f) => ({
+        ...f,
+        stock: fmt(row?.stock ?? 0),
+        selling_price: fmt(row?.selling_price ?? data.selling_price ?? 0),
+        cost_price: fmt(row?.cost_price ?? data.cost_price ?? 0),
+      }));
     }
     const list = (barcodeRes.data ?? []).map((r) => r.barcode).filter(Boolean);
     setBarcodes(list.length ? list : (data.barcode ? [data.barcode] : []));
@@ -156,27 +162,47 @@ export function ProdukFormPage() {
     setError(null);
     const primaryBarcode = barcodes.map((b) => b.trim()).find(Boolean) ?? null;
     const initialStock = parsePriceIdr(form.stock) || 0;
+    const outletSellingPrice = parsePriceIdr(form.selling_price) || 0;
+    const outletCostPrice = parsePriceIdr(form.cost_price) || 0;
     if (isEdit) {
+      const updatePayload: Record<string, unknown> = {
+        organization_id: baseOrgId,
+        name: form.name.trim(),
+        description: form.description.trim() || null,
+        category_id: form.category_id || null,
+        supplier_id: form.supplier_id || null,
+        default_unit_id: form.default_unit_id || null,
+        barcode: primaryBarcode,
+        is_available: form.is_available,
+        image_url: form.image_url.trim() || null,
+        updated_at: new Date().toISOString(),
+      };
+      // Harga master org hanya diubah dari outlet default; cabang hanya ubah harga outletnya
+      if (currentOutlet?.is_default) {
+        updatePayload.selling_price = outletSellingPrice;
+        updatePayload.cost_price = outletCostPrice;
+      }
       const { error: err } = await supabase
         .from("products")
-        .update({
-          organization_id: baseOrgId,
-          name: form.name.trim(),
-          description: form.description.trim() || null,
-          category_id: form.category_id || null,
-          supplier_id: form.supplier_id || null,
-          default_unit_id: form.default_unit_id || null,
-          cost_price: parsePriceIdr(form.cost_price) || 0,
-          selling_price: parsePriceIdr(form.selling_price) || 0,
-          barcode: primaryBarcode,
-          is_available: form.is_available,
-          image_url: form.image_url.trim() || null,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updatePayload)
         .eq("id", productId);
       if (err) {
         setError(err.message);
       } else {
+        if (currentOutletId && productId) {
+          await setOutletProductSellingPrice(
+            baseOrgId,
+            currentOutletId,
+            productId,
+            outletSellingPrice
+          );
+          await setOutletProductCostPrice(
+            baseOrgId,
+            currentOutletId,
+            productId,
+            outletCostPrice
+          );
+        }
         const toInsert = barcodes.map((b) => b.trim()).filter(Boolean);
         await supabase.from("product_barcodes").delete().eq("product_id", productId);
         if (toInsert.length > 0) {
@@ -196,8 +222,8 @@ export function ProdukFormPage() {
           category_id: form.category_id || null,
           supplier_id: form.supplier_id || null,
           default_unit_id: form.default_unit_id || null,
-          cost_price: parsePriceIdr(form.cost_price) || 0,
-          selling_price: parsePriceIdr(form.selling_price) || 0,
+          cost_price: outletCostPrice,
+          selling_price: outletSellingPrice,
           stock: 0,
           barcode: primaryBarcode,
           is_available: form.is_available,
@@ -210,6 +236,18 @@ export function ProdukFormPage() {
       } else if (inserted?.id) {
         if (currentOutletId) {
           await setOutletProductStock(baseOrgId, currentOutletId, inserted.id, initialStock);
+          await setOutletProductSellingPrice(
+            baseOrgId,
+            currentOutletId,
+            inserted.id,
+            outletSellingPrice
+          );
+          await setOutletProductCostPrice(
+            baseOrgId,
+            currentOutletId,
+            inserted.id,
+            outletCostPrice
+          );
         }
         if (form.default_unit_id) {
           await supabase.from("product_units").insert({
@@ -386,7 +424,9 @@ export function ProdukFormPage() {
                 </select>
               </div>
               <div>
-                <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">HPP (Harga Beli)</label>
+                <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
+                  HPP / Harga Modal{currentOutlet ? ` (${currentOutlet.name})` : ""}
+                </label>
                 <Input
                   type="text"
                   inputMode="decimal"
@@ -394,9 +434,14 @@ export function ProdukFormPage() {
                   onChange={(e) => setForm((f) => ({ ...f, cost_price: e.target.value }))}
                   placeholder="0 atau 10.000"
                 />
+                <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                  HPP untuk outlet aktif. Cabang bisa punya HPP berbeda.
+                </p>
               </div>
               <div>
-                <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Harga Jual</label>
+                <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
+                  Harga Jual{currentOutlet ? ` (${currentOutlet.name})` : ""}
+                </label>
                 <Input
                   type="text"
                   inputMode="decimal"
@@ -404,6 +449,9 @@ export function ProdukFormPage() {
                   onChange={(e) => setForm((f) => ({ ...f, selling_price: e.target.value }))}
                   placeholder="0 atau 10.000"
                 />
+                <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                  Harga untuk outlet yang sedang aktif. Outlet lain bisa punya harga berbeda.
+                </p>
               </div>
             </div>
             <div>

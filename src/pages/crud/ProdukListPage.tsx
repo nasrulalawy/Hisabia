@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import type { Product } from "@/lib/database.types";
-import { applyOutletStockToProducts, fetchOutletStockMap } from "@/lib/outletStock";
+import { applyOutletProductToProducts, fetchOutletProductMap } from "@/lib/outletStock";
 
 interface ProductWithRelations extends Product {
   menu_categories?: { name: string } | null;
@@ -48,11 +48,11 @@ export function ProdukListPage() {
       setError(err.message);
       return;
     }
-    const stockMap = await fetchOutletStockMap(
+    const outletMap = await fetchOutletProductMap(
       currentOutletId,
       (rows ?? []).map((r: { id: string }) => r.id)
     );
-    setData(applyOutletStockToProducts((rows ?? []) as ProductWithRelations[], stockMap));
+    setData(applyOutletProductToProducts((rows ?? []) as ProductWithRelations[], outletMap));
     setLoading(false);
     setError(null);
   }
@@ -145,7 +145,7 @@ export function ProdukListPage() {
         <div>
           <h2 className="text-2xl font-semibold text-[var(--foreground)]">Produk</h2>
           <p className="text-[var(--muted-foreground)]">
-            Katalog bersama. Stok ditampilkan untuk outlet {currentOutlet?.name ?? "aktif"}.
+            Katalog bersama. Stok & harga jual untuk outlet {currentOutlet?.name ?? "aktif"}.
           </p>
         </div>
         <Link to={`/org/${baseOrgId}/produk/tambah`}>

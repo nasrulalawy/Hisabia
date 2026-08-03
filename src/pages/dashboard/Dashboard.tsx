@@ -101,7 +101,7 @@ export function Dashboard() {
         .eq("organization_id", baseOrgId),
       supabase
         .from("outlet_product_stock")
-        .select("product_id, stock")
+        .select("product_id, stock, cost_price, selling_price")
         .eq("outlet_id", currentOutletId),
       // Outlets count
       supabase.from("outlets").select("id", { count: "exact", head: true }).eq("organization_id", baseOrgId),
@@ -122,8 +122,17 @@ export function Dashboard() {
         const products =
           (prodRes.data as { id: string; cost_price: number; selling_price: number }[]) ?? [];
         const stockMap: Record<string, number> = {};
-        ((stockRes.data as { product_id: string; stock: number }[]) ?? []).forEach((s) => {
+        const costMap: Record<string, number> = {};
+        const sellMap: Record<string, number> = {};
+        ((stockRes.data as {
+          product_id: string;
+          stock: number;
+          cost_price: number | null;
+          selling_price: number | null;
+        }[]) ?? []).forEach((s) => {
           stockMap[s.product_id] = Number(s.stock ?? 0);
+          if (s.cost_price != null) costMap[s.product_id] = Number(s.cost_price);
+          if (s.selling_price != null) sellMap[s.product_id] = Number(s.selling_price);
         });
 
         const salesToday = orders
@@ -162,8 +171,8 @@ export function Dashboard() {
         let stockPotentialValue = 0;
         products.forEach((p) => {
           const stock = stockMap[p.id] ?? 0;
-          const hpp = Number(p.cost_price ?? 0);
-          const sell = Number(p.selling_price ?? 0);
+          const hpp = costMap[p.id] ?? Number(p.cost_price ?? 0);
+          const sell = sellMap[p.id] ?? Number(p.selling_price ?? 0);
           stockCapitalValue += hpp * stock;
           stockPotentialValue += sell * stock;
         });

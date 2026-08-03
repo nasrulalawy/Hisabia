@@ -79,7 +79,7 @@ export function DashboardKeuanganPage() {
           .eq("organization_id", orgId),
         supabase
           .from("outlet_product_stock")
-          .select("product_id, stock")
+          .select("product_id, stock, cost_price")
           .eq("outlet_id", currentOutletId),
         supabase
           .from("orders")
@@ -108,12 +108,19 @@ export function DashboardKeuanganPage() {
       });
 
       const stockMap: Record<string, number> = {};
-      ((stockRes.data as { product_id: string; stock: number }[]) ?? []).forEach((s) => {
+      const costMap: Record<string, number> = {};
+      ((stockRes.data as {
+        product_id: string;
+        stock: number;
+        cost_price: number | null;
+      }[]) ?? []).forEach((s) => {
         stockMap[s.product_id] = Number(s.stock ?? 0);
+        if (s.cost_price != null) costMap[s.product_id] = Number(s.cost_price);
       });
       let vPersediaan = 0;
       (prodRes.data ?? []).forEach((p: { id: string; cost_price: number }) => {
-        vPersediaan += Number(p.cost_price ?? 0) * (stockMap[p.id] ?? 0);
+        const hpp = costMap[p.id] ?? Number(p.cost_price ?? 0);
+        vPersediaan += hpp * (stockMap[p.id] ?? 0);
       });
 
       const penjualan = (ordersTodayRes.data ?? []).reduce(

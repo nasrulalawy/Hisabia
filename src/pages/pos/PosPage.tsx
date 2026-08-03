@@ -24,7 +24,7 @@ import {
 } from "@/lib/receipt";
 import { printLabelNiimbot } from "@/lib/niimbot";
 import { getPosLayout } from "@/lib/posLayout";
-import { applyOutletStockToProducts, fetchOutletStockMap, setOutletProductStock } from "@/lib/outletStock";
+import { applyOutletProductToProducts, fetchOutletProductMap, setOutletProductStock } from "@/lib/outletStock";
 
 interface ProductUnitRow {
   id: string;
@@ -404,11 +404,11 @@ export function PosPage() {
         setProductMeta({});
       } else {
         const prodsListRaw = (prods as unknown as ProductWithCategory[]) ?? [];
-        const stockMap = await fetchOutletStockMap(
+        const outletMap = await fetchOutletProductMap(
           currentOutletId,
           prodsListRaw.map((p) => p.id)
         );
-        const prodsList = applyOutletStockToProducts(prodsListRaw, stockMap);
+        const prodsList = applyOutletProductToProducts(prodsListRaw, outletMap);
         setProducts(prodsList);
 
         const { data: barcodeRows } = await supabase

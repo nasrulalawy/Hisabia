@@ -8,7 +8,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
-import { applyOutletStockToProducts, fetchOutletStockMap, setOutletProductStock } from "@/lib/outletStock";
+import { applyOutletProductToProducts, fetchOutletProductMap, setOutletProductStock, setOutletProductCostPrice } from "@/lib/outletStock";
 
 interface ProductWithUnit {
   id: string;
@@ -50,7 +50,7 @@ export function StokTokoPage() {
   async function fetchData() {
     if (!orgId || !currentOutletId) return;
     setLoading(true);
-    const [prodsRes, movRes, stockMap] = await Promise.all([
+    const [prodsRes, movRes, outletMap] = await Promise.all([
       supabase
         .from("products")
         .select("id, name, stock, cost_price, selling_price, is_available, use_ingredients_for_cost, units(symbol)")
@@ -64,10 +64,10 @@ export function StokTokoPage() {
         .is("warehouse_id", null)
         .order("created_at", { ascending: false })
         .limit(50),
-      fetchOutletStockMap(currentOutletId),
+      fetchOutletProductMap(currentOutletId),
     ]);
     const raw = (prodsRes.data as unknown as ProductWithUnit[]) ?? [];
-    setProducts(applyOutletStockToProducts(raw, stockMap));
+    setProducts(applyOutletProductToProducts(raw, outletMap));
     setMovements((movRes.data as unknown as StockMovementRow[]) ?? []);
     setLoading(false);
   }
@@ -159,10 +159,7 @@ export function StokTokoPage() {
       const totalQty = currentStock + addQty;
       const newCost =
         totalQty > 0 ? (currentStock * currentCost + addQty * price) / totalQty : price;
-      await supabase
-        .from("products")
-        .update({ cost_price: newCost, updated_at: new Date().toISOString() })
-        .eq("id", form.product_id);
+      await setOutletProductCostPrice(orgId, currentOutletId, form.product_id, newCost);
     }
 
     if (modalType === "masuk" && form.record_purchase && orgId) {

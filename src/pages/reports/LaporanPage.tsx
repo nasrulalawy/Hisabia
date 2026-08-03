@@ -175,7 +175,7 @@ export function LaporanPage() {
         const items = (itemsRes.data ?? []) as Array<{ order_id: string; product_id: string | null; unit_id: string | null; price: number; quantity: number }>;
         const productIds = [...new Set(items.map((i) => i.product_id).filter(Boolean))] as string[];
 
-        const [productsRes, unitsRes, customersRes] = await Promise.all([
+        const [productsRes, unitsRes, customersRes, outletCostRes] = await Promise.all([
           productIds.length > 0
             ? supabase.from("products").select("id, cost_price").eq("organization_id", orgId).in("id", productIds)
             : Promise.resolve({ data: [] }),
@@ -183,9 +183,20 @@ export function LaporanPage() {
             ? supabase.from("product_units").select("product_id, unit_id, conversion_to_base").in("product_id", productIds)
             : Promise.resolve({ data: [] }),
           supabase.from("customers").select("id, name").eq("organization_id", orgId),
+          productIds.length > 0 && currentOutletId
+            ? supabase
+                .from("outlet_product_stock")
+                .select("product_id, cost_price")
+                .eq("outlet_id", currentOutletId)
+                .in("product_id", productIds)
+            : Promise.resolve({ data: [] }),
         ]);
 
         const productMap = Object.fromEntries(((productsRes.data ?? []) as Array<{ id: string; cost_price: number }>).map((p) => [p.id, p]));
+        const outletCostMap: Record<string, number> = {};
+        ((outletCostRes.data ?? []) as Array<{ product_id: string; cost_price: number | null }>).forEach((r) => {
+          if (r.cost_price != null) outletCostMap[r.product_id] = Number(r.cost_price);
+        });
         const unitMap: Record<string, number> = {};
         ((unitsRes.data ?? []) as Array<{ product_id: string; unit_id: string; conversion_to_base: number }>).forEach((u) => {
           unitMap[`${u.product_id}_${u.unit_id}`] = Number(u.conversion_to_base) || 1;
@@ -197,7 +208,8 @@ export function LaporanPage() {
           let orderHpp = 0;
           for (const it of orderItems) {
             if (it.product_id && productMap[it.product_id]) {
-              const costPrice = Number(productMap[it.product_id].cost_price ?? 0);
+              const costPrice =
+                outletCostMap[it.product_id] ?? Number(productMap[it.product_id].cost_price ?? 0);
               const conv = it.unit_id ? (unitMap[`${it.product_id}_${it.unit_id}`] ?? 1) : 1;
               const qtyBase = Number(it.quantity) * conv;
               orderHpp += qtyBase * costPrice;
