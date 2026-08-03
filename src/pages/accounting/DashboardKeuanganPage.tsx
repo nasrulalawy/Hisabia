@@ -57,7 +57,7 @@ export function DashboardKeuanganPage() {
 
     (async () => {
       // Isolasi outlet: kas & piutang/hutang dari data outlet, bukan jurnal org-wide
-      const [cashRes, recRes, payRes, prodRes, ordersTodayRes] = await Promise.all([
+      const [cashRes, recRes, payRes, prodRes, stockRes, ordersTodayRes] = await Promise.all([
         supabase
           .from("cash_flows")
           .select("type, amount")
@@ -75,8 +75,12 @@ export function DashboardKeuanganPage() {
           .eq("outlet_id", currentOutletId),
         supabase
           .from("products")
-          .select("cost_price, stock")
+          .select("id, cost_price")
           .eq("organization_id", orgId),
+        supabase
+          .from("outlet_product_stock")
+          .select("product_id, stock")
+          .eq("outlet_id", currentOutletId),
         supabase
           .from("orders")
           .select("total")
@@ -103,9 +107,13 @@ export function DashboardKeuanganPage() {
         vHutang += Number(r.amount) - Number(r.paid ?? 0);
       });
 
+      const stockMap: Record<string, number> = {};
+      ((stockRes.data as { product_id: string; stock: number }[]) ?? []).forEach((s) => {
+        stockMap[s.product_id] = Number(s.stock ?? 0);
+      });
       let vPersediaan = 0;
-      (prodRes.data ?? []).forEach((p: { cost_price: number; stock: number }) => {
-        vPersediaan += Number(p.cost_price ?? 0) * Number(p.stock ?? 0);
+      (prodRes.data ?? []).forEach((p: { id: string; cost_price: number }) => {
+        vPersediaan += Number(p.cost_price ?? 0) * (stockMap[p.id] ?? 0);
       });
 
       const penjualan = (ordersTodayRes.data ?? []).reduce(

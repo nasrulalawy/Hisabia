@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/Input";
 import type { Product } from "@/lib/database.types";
 import type { Warehouse } from "@/lib/database.types";
 import type { Supplier } from "@/lib/database.types";
+import { applyOutletStockToProducts, fetchOutletStockMap, setOutletProductStock } from "@/lib/outletStock";
 
 interface LineItem {
   product_id: string;
@@ -46,14 +47,19 @@ export function PembelianPage() {
     ]);
     setSuppliers(supRes.data ?? []);
     setWarehouses(whRes.data ?? []);
-    setProducts(prodRes.data ?? []);
+    const raw = (prodRes.data ?? []) as Product[];
+    const stockMap = await fetchOutletStockMap(
+      currentOutletId,
+      raw.map((p) => p.id)
+    );
+    setProducts(applyOutletStockToProducts(raw, stockMap));
     setForm((f) => ({ ...f, warehouse_id: whRes.data?.[0]?.id ?? f.warehouse_id }));
     setLoading(false);
   }
 
   useEffect(() => {
     fetchData();
-  }, [orgId]);
+  }, [orgId, currentOutletId]);
 
   function addItem() {
     setItems([...items, { product_id: "", product_name: "", qty: "1", price: "0" }]);
@@ -87,7 +93,7 @@ export function PembelianPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!orgId) return;
+    if (!orgId || !currentOutletId) return;
 
     const validItems = items.filter((i) => i.product_id && parsePriceIdr(i.qty) > 0);
     if (validItems.length === 0) {
@@ -124,6 +130,7 @@ export function PembelianPage() {
         const { error: movErr } = await supabase.from("stock_movements").insert({
           organization_id: orgId,
           warehouse_id: form.warehouse_id,
+          outlet_id: currentOutletId,
           product_id: item.product_id,
           type: "in",
           quantity: qty,
@@ -132,13 +139,20 @@ export function PembelianPage() {
 
         if (movErr) throw movErr;
 
-        const productUpdate: { stock: number; cost_price?: number; updated_at: string } = {
-          stock: newStock,
-          updated_at: new Date().toISOString(),
-        };
-        if (!useRecipeCost) productUpdate.cost_price = newCostPrice;
+        const { error: stockErr } = await setOutletProductStock(
+          orgId,
+          currentOutletId,
+          item.product_id,
+          newStock
+        );
+        if (stockErr) throw new Error(stockErr);
 
-        await supabase.from("products").update(productUpdate).eq("id", item.product_id);
+        if (!useRecipeCost) {
+          await supabase
+            .from("products")
+            .update({ cost_price: newCostPrice, updated_at: new Date().toISOString() })
+            .eq("id", item.product_id);
+        }
       }
 
       const entryDate = new Date().toISOString().slice(0, 10);

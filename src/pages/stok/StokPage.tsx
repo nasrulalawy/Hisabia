@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/Badge";
 import type { Product } from "@/lib/database.types";
 import type { Warehouse } from "@/lib/database.types";
 import type { StockMovement } from "@/lib/database.types";
+import { applyOutletStockToProducts, fetchOutletStockMap, setOutletProductStock } from "@/lib/outletStock";
 
 interface ProductWithUnit extends Product {
   units?: { symbol: string } | null;
@@ -21,7 +22,7 @@ interface MovementWithRelations extends StockMovement {
 }
 
 export function StokPage() {
-  const { orgId } = useOrg();
+  const { orgId, currentOutletId } = useOrg();
   const [products, setProducts] = useState<ProductWithUnit[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [movements, setMovements] = useState<MovementWithRelations[]>([]);
@@ -37,10 +38,10 @@ export function StokPage() {
   const [submitLoading, setSubmitLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   async function fetchData() {
-    if (!orgId) return;
+    if (!orgId || !currentOutletId) return;
     setLoading(true);
 
-    const [prodsRes, whRes, movRes] = await Promise.all([
+    const [prodsRes, whRes, movRes, stockMap] = await Promise.all([
       supabase
         .from("products")
         .select("*, units(symbol)")
@@ -51,11 +52,13 @@ export function StokPage() {
         .from("stock_movements")
         .select("*, products(name), warehouses(name)")
         .eq("organization_id", orgId)
+        .eq("outlet_id", currentOutletId)
         .order("created_at", { ascending: false })
         .limit(50),
+      fetchOutletStockMap(currentOutletId),
     ]);
 
-    setProducts((prodsRes.data as ProductWithUnit[]) ?? []);
+    setProducts(applyOutletStockToProducts((prodsRes.data as ProductWithUnit[]) ?? [], stockMap));
     setWarehouses(whRes.data ?? []);
     setMovements((movRes.data as MovementWithRelations[]) ?? []);
     setLoading(false);
@@ -63,7 +66,7 @@ export function StokPage() {
 
   useEffect(() => {
     fetchData();
-  }, [orgId]);
+  }, [orgId, currentOutletId]);
 
   function openAdd() {
     setForm({
@@ -79,7 +82,7 @@ export function StokPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!orgId || !form.warehouse_id || !form.product_id || !form.quantity) return;
+    if (!orgId || !currentOutletId || !form.warehouse_id || !form.product_id || !form.quantity) return;
     const qty = parseFloat(form.quantity);
     if (isNaN(qty)) {
       setError("Jumlah tidak valid");
@@ -107,6 +110,7 @@ export function StokPage() {
       .insert({
         organization_id: orgId,
         warehouse_id: form.warehouse_id,
+        outlet_id: currentOutletId,
         product_id: form.product_id,
         type: form.type,
         quantity: form.type === "adjust" ? qty : qty,
@@ -131,14 +135,16 @@ export function StokPage() {
     }
     newStock = Math.max(0, newStock);
 
-    const { error: updateErr } = await supabase
-      .from("products")
-      .update({ stock: newStock, updated_at: new Date().toISOString() })
-      .eq("id", form.product_id);
+    const { error: updateErr } = await setOutletProductStock(
+      orgId,
+      currentOutletId,
+      form.product_id,
+      newStock
+    );
 
     if (updateErr) {
       await supabase.from("stock_movements").delete().eq("id", movement.id);
-      setError(updateErr.message);
+      setError(updateErr);
       setSubmitLoading(false);
       return;
     }

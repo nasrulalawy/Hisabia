@@ -24,6 +24,7 @@ import {
 } from "@/lib/receipt";
 import { printLabelNiimbot } from "@/lib/niimbot";
 import { getPosLayout } from "@/lib/posLayout";
+import { applyOutletStockToProducts, fetchOutletStockMap, setOutletProductStock } from "@/lib/outletStock";
 
 interface ProductUnitRow {
   id: string;
@@ -402,7 +403,12 @@ export function PosPage() {
         setBarcodeToProductId({});
         setProductMeta({});
       } else {
-        const prodsList = (prods as unknown as ProductWithCategory[]) ?? [];
+        const prodsListRaw = (prods as unknown as ProductWithCategory[]) ?? [];
+        const stockMap = await fetchOutletStockMap(
+          currentOutletId,
+          prodsListRaw.map((p) => p.id)
+        );
+        const prodsList = applyOutletStockToProducts(prodsListRaw, stockMap);
         setProducts(prodsList);
 
         const { data: barcodeRows } = await supabase
@@ -1071,13 +1077,18 @@ export function PosPage() {
       if (!product) continue;
       const qtyBase = c.qty * c.conversionToBase;
       const newStock = Math.max(0, Number(product.stock ?? 0) - qtyBase);
-      await supabase
-        .from("products")
-        .update({ stock: newStock, updated_at: new Date().toISOString() })
-        .eq("id", c.productId);
+      if (currentOutletId) {
+        await setOutletProductStock(orgId, currentOutletId, c.productId, newStock);
+      } else {
+        await supabase
+          .from("products")
+          .update({ stock: newStock, updated_at: new Date().toISOString() })
+          .eq("id", c.productId);
+      }
       await supabase.from("stock_movements").insert({
         organization_id: orgId,
         warehouse_id: null,
+        outlet_id: currentOutletId,
         product_id: c.productId,
         type: "out",
         quantity: qtyBase,

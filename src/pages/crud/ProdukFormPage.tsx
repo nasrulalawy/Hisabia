@@ -7,10 +7,11 @@ import { Input } from "@/components/ui/Input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { ProductPhotoScanModal } from "@/components/product/ProductPhotoScanModal";
 import { parsePriceIdr } from "@/lib/utils";
+import { fetchOutletStockMap, setOutletProductStock } from "@/lib/outletStock";
 
 export function ProdukFormPage() {
   const { orgId, id: productId } = useParams<{ orgId: string; id?: string }>();
-  const { orgId: ctxOrgId } = useOrg();
+  const { orgId: ctxOrgId, currentOutletId } = useOrg();
   const navigate = useNavigate();
   const isEdit = !!productId;
   const baseOrgId = orgId ?? ctxOrgId;
@@ -84,6 +85,10 @@ export function ProdukFormPage() {
       is_available: data.is_available ?? true,
       image_url: data.image_url ?? "",
     });
+    if (currentOutletId && productId) {
+      const stockMap = await fetchOutletStockMap(currentOutletId, [productId]);
+      setForm((f) => ({ ...f, stock: fmt(stockMap[productId] ?? 0) }));
+    }
     const list = (barcodeRes.data ?? []).map((r) => r.barcode).filter(Boolean);
     setBarcodes(list.length ? list : (data.barcode ? [data.barcode] : []));
   }
@@ -150,24 +155,24 @@ export function ProdukFormPage() {
     setSubmitLoading(true);
     setError(null);
     const primaryBarcode = barcodes.map((b) => b.trim()).find(Boolean) ?? null;
-    const payload = {
-      organization_id: baseOrgId,
-      name: form.name.trim(),
-      description: form.description.trim() || null,
-      category_id: form.category_id || null,
-      supplier_id: form.supplier_id || null,
-      default_unit_id: form.default_unit_id || null,
-      cost_price: parsePriceIdr(form.cost_price) || 0,
-      selling_price: parsePriceIdr(form.selling_price) || 0,
-      stock: parsePriceIdr(form.stock) || 0,
-      barcode: primaryBarcode,
-      is_available: form.is_available,
-      image_url: form.image_url.trim() || null,
-    };
+    const initialStock = parsePriceIdr(form.stock) || 0;
     if (isEdit) {
       const { error: err } = await supabase
         .from("products")
-        .update({ ...payload, updated_at: new Date().toISOString() })
+        .update({
+          organization_id: baseOrgId,
+          name: form.name.trim(),
+          description: form.description.trim() || null,
+          category_id: form.category_id || null,
+          supplier_id: form.supplier_id || null,
+          default_unit_id: form.default_unit_id || null,
+          cost_price: parsePriceIdr(form.cost_price) || 0,
+          selling_price: parsePriceIdr(form.selling_price) || 0,
+          barcode: primaryBarcode,
+          is_available: form.is_available,
+          image_url: form.image_url.trim() || null,
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", productId);
       if (err) {
         setError(err.message);
@@ -184,16 +189,32 @@ export function ProdukFormPage() {
     } else {
       const { data: inserted, error: insertErr } = await supabase
         .from("products")
-        .insert(payload)
+        .insert({
+          organization_id: baseOrgId,
+          name: form.name.trim(),
+          description: form.description.trim() || null,
+          category_id: form.category_id || null,
+          supplier_id: form.supplier_id || null,
+          default_unit_id: form.default_unit_id || null,
+          cost_price: parsePriceIdr(form.cost_price) || 0,
+          selling_price: parsePriceIdr(form.selling_price) || 0,
+          stock: 0,
+          barcode: primaryBarcode,
+          is_available: form.is_available,
+          image_url: form.image_url.trim() || null,
+        })
         .select("id")
         .single();
       if (insertErr) {
         setError(insertErr.message);
       } else if (inserted?.id) {
-        if (payload.default_unit_id) {
+        if (currentOutletId) {
+          await setOutletProductStock(baseOrgId, currentOutletId, inserted.id, initialStock);
+        }
+        if (form.default_unit_id) {
           await supabase.from("product_units").insert({
             product_id: inserted.id,
-            unit_id: payload.default_unit_id,
+            unit_id: form.default_unit_id,
             conversion_to_base: 1,
             is_base: true,
           });
@@ -436,7 +457,12 @@ export function ProdukFormPage() {
                 />
                 {isEdit && (
                   <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                    Stok diubah via Gudang / Stock Movement
+                    Stok per outlet. Ubah lewat Stok Toko di outlet yang aktif.
+                  </p>
+                )}
+                {!isEdit && (
+                  <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                    Stok awal untuk outlet yang sedang aktif.
                   </p>
                 )}
               </div>

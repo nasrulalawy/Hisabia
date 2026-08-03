@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/Badge";
 import type { StockOpnameSession, StockOpnameLine } from "@/lib/database.types";
 import type { Product } from "@/lib/database.types";
 import type { Warehouse } from "@/lib/database.types";
+import { applyOutletStockToProducts, fetchOutletStockMap } from "@/lib/outletStock";
 
 interface LineWithProduct extends StockOpnameLine {
   products?: { name: string; stock: number } | null;
@@ -30,7 +31,7 @@ const VARIANCE_REASONS: { value: string; label: string }[] = [
 
 export function OpnameDetailPage() {
   const { orgId, sessionId } = useParams<{ orgId: string; sessionId: string }>();
-  const { orgId: ctxOrgId } = useOrg();
+  const { orgId: ctxOrgId, currentOutletId } = useOrg();
   const navigate = useNavigate();
   const baseOrgId = orgId ?? ctxOrgId;
 
@@ -59,8 +60,9 @@ export function OpnameDetailPage() {
       Promise.all([
         supabase.from("products").select("*").eq("organization_id", baseOrgId).order("name"),
         supabase.from("warehouses").select("*").eq("organization_id", baseOrgId).order("name"),
-      ]).then(([pRes, wRes]) => {
-        setProducts(pRes.data ?? []);
+        fetchOutletStockMap(currentOutletId),
+      ]).then(([pRes, wRes, stockMap]) => {
+        setProducts(applyOutletStockToProducts((pRes.data ?? []) as Product[], stockMap));
         setWarehouses(wRes.data ?? []);
         setNewWarehouseId(wRes.data?.[0]?.id ?? "");
         setLoading(false);
@@ -100,11 +102,11 @@ export function OpnameDetailPage() {
             setLoading(false);
           });
       });
-  }, [baseOrgId, sessionId, isNew]);
+  }, [baseOrgId, sessionId, isNew, currentOutletId]);
 
   async function handleCreateSession(e: React.FormEvent) {
     e.preventDefault();
-    if (!baseOrgId) return;
+    if (!baseOrgId || !currentOutletId) return;
     setSaving(true);
     setError(null);
     const { data: sess, error: insErr } = await supabase
@@ -112,6 +114,7 @@ export function OpnameDetailPage() {
       .insert({
         organization_id: baseOrgId,
         warehouse_id: newWarehouseId || null,
+        outlet_id: currentOutletId,
         status: "draft",
         notes: newNotes.trim() || null,
       })

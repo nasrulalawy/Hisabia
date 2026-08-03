@@ -94,11 +94,15 @@ export function Dashboard() {
         .select("amount, paid")
         .eq("organization_id", baseOrgId)
         .eq("outlet_id", currentOutletId),
-      // Products & stock value
+      // Products & stock value (per outlet aktif)
       supabase
         .from("products")
-        .select("id, cost_price, selling_price, stock", { count: "exact" })
+        .select("id, cost_price, selling_price", { count: "exact" })
         .eq("organization_id", baseOrgId),
+      supabase
+        .from("outlet_product_stock")
+        .select("product_id, stock")
+        .eq("outlet_id", currentOutletId),
       // Outlets count
       supabase.from("outlets").select("id", { count: "exact", head: true }).eq("organization_id", baseOrgId),
       // Recent orders outlet aktif
@@ -110,13 +114,17 @@ export function Dashboard() {
         .order("created_at", { ascending: false })
         .limit(5),
     ]).then(
-      ([ordersRes, cashRes, recRes, payRes, prodRes, outRes, recentRes]) => {
+      ([ordersRes, cashRes, recRes, payRes, prodRes, stockRes, outRes, recentRes]) => {
         const orders = ordersRes.data ?? [];
         const cashFlows = cashRes.data ?? [];
         const receivables = recRes.data ?? [];
         const payables = payRes.data ?? [];
         const products =
-          (prodRes.data as { id: string; cost_price: number; selling_price: number; stock: number }[]) ?? [];
+          (prodRes.data as { id: string; cost_price: number; selling_price: number }[]) ?? [];
+        const stockMap: Record<string, number> = {};
+        ((stockRes.data as { product_id: string; stock: number }[]) ?? []).forEach((s) => {
+          stockMap[s.product_id] = Number(s.stock ?? 0);
+        });
 
         const salesToday = orders
           .filter((o) => o.created_at >= todayStart)
@@ -153,7 +161,7 @@ export function Dashboard() {
         let stockCapitalValue = 0;
         let stockPotentialValue = 0;
         products.forEach((p) => {
-          const stock = Number(p.stock ?? 0);
+          const stock = stockMap[p.id] ?? 0;
           const hpp = Number(p.cost_price ?? 0);
           const sell = Number(p.selling_price ?? 0);
           stockCapitalValue += hpp * stock;

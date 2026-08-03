@@ -432,10 +432,19 @@ export interface Warehouse {
   updated_at: string;
 }
 
+export interface OutletProductStock {
+  organization_id: string;
+  outlet_id: string;
+  product_id: string;
+  stock: number;
+  updated_at: string;
+}
+
 export interface StockMovement {
   id: string;
   organization_id: string;
   warehouse_id: string | null;
+  outlet_id: string | null;
   product_id: string;
   type: "in" | "out" | "adjust";
   quantity: number;
@@ -449,6 +458,7 @@ export interface StockOpnameSession {
   id: string;
   organization_id: string;
   warehouse_id: string | null;
+  outlet_id: string | null;
   status: StockOpnameStatus;
   notes: string | null;
   created_at: string;

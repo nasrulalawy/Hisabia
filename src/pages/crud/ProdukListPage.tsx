@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import type { Product } from "@/lib/database.types";
+import { applyOutletStockToProducts, fetchOutletStockMap } from "@/lib/outletStock";
 
 interface ProductWithRelations extends Product {
   menu_categories?: { name: string } | null;
@@ -17,7 +18,7 @@ interface ProductWithRelations extends Product {
 
 export function ProdukListPage() {
   const { orgId } = useParams<{ orgId: string }>();
-  const { orgId: ctxOrgId } = useOrg();
+  const { orgId: ctxOrgId, currentOutletId, currentOutlet } = useOrg();
   const navigate = useNavigate();
   const [data, setData] = useState<ProductWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,18 +43,23 @@ export function ProdukListPage() {
       )
       .eq("organization_id", baseOrgId)
       .order("name");
-    setLoading(false);
     if (err) {
+      setLoading(false);
       setError(err.message);
       return;
     }
-    setData(rows ?? []);
+    const stockMap = await fetchOutletStockMap(
+      currentOutletId,
+      (rows ?? []).map((r: { id: string }) => r.id)
+    );
+    setData(applyOutletStockToProducts((rows ?? []) as ProductWithRelations[], stockMap));
+    setLoading(false);
     setError(null);
   }
 
   useEffect(() => {
     fetchData();
-  }, [baseOrgId]);
+  }, [baseOrgId, currentOutletId]);
 
   async function handleDelete() {
     if (!deleteTarget) return;
@@ -138,7 +144,9 @@ export function ProdukListPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-semibold text-[var(--foreground)]">Produk</h2>
-          <p className="text-[var(--muted-foreground)]">Kelola produk dan stok organisasi.</p>
+          <p className="text-[var(--muted-foreground)]">
+            Katalog bersama. Stok ditampilkan untuk outlet {currentOutlet?.name ?? "aktif"}.
+          </p>
         </div>
         <Link to={`/org/${baseOrgId}/produk/tambah`}>
           <Button>Tambah Produk</Button>

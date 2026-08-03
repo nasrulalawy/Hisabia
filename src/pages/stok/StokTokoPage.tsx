@@ -8,6 +8,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
+import { applyOutletStockToProducts, fetchOutletStockMap, setOutletProductStock } from "@/lib/outletStock";
 
 interface ProductWithUnit {
   id: string;
@@ -47,9 +48,9 @@ export function StokTokoPage() {
   const [error, setError] = useState<string | null>(null);
 
   async function fetchData() {
-    if (!orgId) return;
+    if (!orgId || !currentOutletId) return;
     setLoading(true);
-    const [prodsRes, movRes] = await Promise.all([
+    const [prodsRes, movRes, stockMap] = await Promise.all([
       supabase
         .from("products")
         .select("id, name, stock, cost_price, selling_price, is_available, use_ingredients_for_cost, units(symbol)")
@@ -59,18 +60,21 @@ export function StokTokoPage() {
         .from("stock_movements")
         .select("id, type, quantity, notes, created_at, products(name)")
         .eq("organization_id", orgId)
+        .eq("outlet_id", currentOutletId)
         .is("warehouse_id", null)
         .order("created_at", { ascending: false })
         .limit(50),
+      fetchOutletStockMap(currentOutletId),
     ]);
-    setProducts((prodsRes.data as unknown as ProductWithUnit[]) ?? []);
+    const raw = (prodsRes.data as unknown as ProductWithUnit[]) ?? [];
+    setProducts(applyOutletStockToProducts(raw, stockMap));
     setMovements((movRes.data as unknown as StockMovementRow[]) ?? []);
     setLoading(false);
   }
 
   useEffect(() => {
     fetchData();
-  }, [orgId]);
+  }, [orgId, currentOutletId]);
 
   function openModal(type: "masuk" | "adjust") {
     setModalType(type);
@@ -87,7 +91,7 @@ export function StokTokoPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!orgId || !form.product_id) return;
+    if (!orgId || !currentOutletId || !form.product_id) return;
     const qty = parseFloat(form.quantity);
     if (isNaN(qty) || (modalType === "masuk" && qty <= 0)) {
       setError("Jumlah tidak valid");
@@ -123,6 +127,7 @@ export function StokTokoPage() {
     const { error: movErr } = await supabase.from("stock_movements").insert({
       organization_id: orgId,
       warehouse_id: null,
+      outlet_id: currentOutletId,
       product_id: form.product_id,
       type,
       quantity: modalType === "masuk" ? Math.abs(qty) : qty,
@@ -135,25 +140,29 @@ export function StokTokoPage() {
       return;
     }
 
-    const updatePayload: { stock: number; cost_price?: number } = { stock: newStock };
+    const { error: stockErr } = await setOutletProductStock(
+      orgId,
+      currentOutletId,
+      form.product_id,
+      newStock
+    );
+    if (stockErr) {
+      setError(stockErr);
+      setSubmitLoading(false);
+      return;
+    }
+
     const useRecipeCost = Boolean(product?.use_ingredients_for_cost);
     if (modalType === "masuk" && price > 0 && !useRecipeCost) {
       const currentCost = Number(product?.cost_price ?? 0);
       const addQty = Math.abs(qty);
       const totalQty = currentStock + addQty;
-      updatePayload.cost_price =
+      const newCost =
         totalQty > 0 ? (currentStock * currentCost + addQty * price) / totalQty : price;
-    }
-
-    const { error: updErr } = await supabase
-      .from("products")
-      .update({ ...updatePayload, updated_at: new Date().toISOString() })
-      .eq("id", form.product_id);
-
-    if (updErr) {
-      setError(updErr.message);
-      setSubmitLoading(false);
-      return;
+      await supabase
+        .from("products")
+        .update({ cost_price: newCost, updated_at: new Date().toISOString() })
+        .eq("id", form.product_id);
     }
 
     if (modalType === "masuk" && form.record_purchase && orgId) {
