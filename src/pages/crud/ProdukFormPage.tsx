@@ -153,7 +153,7 @@ export function ProdukFormPage() {
       setLoading(false);
     }
     init();
-  }, [baseOrgId, productId]);
+  }, [baseOrgId, productId, currentOutletId]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -190,18 +190,23 @@ export function ProdukFormPage() {
         setError(err.message);
       } else {
         if (currentOutletId && productId) {
-          await setOutletProductSellingPrice(
+          const sellRes = await setOutletProductSellingPrice(
             baseOrgId,
             currentOutletId,
             productId,
             outletSellingPrice
           );
-          await setOutletProductCostPrice(
+          const costRes = await setOutletProductCostPrice(
             baseOrgId,
             currentOutletId,
             productId,
             outletCostPrice
           );
+          if (sellRes.error || costRes.error) {
+            setError(sellRes.error || costRes.error || "Gagal simpan harga outlet");
+            setSubmitLoading(false);
+            return;
+          }
         }
         const toInsert = barcodes.map((b) => b.trim()).filter(Boolean);
         await supabase.from("product_barcodes").delete().eq("product_id", productId);
@@ -235,19 +240,34 @@ export function ProdukFormPage() {
         setError(insertErr.message);
       } else if (inserted?.id) {
         if (currentOutletId) {
-          await setOutletProductStock(baseOrgId, currentOutletId, inserted.id, initialStock);
-          await setOutletProductSellingPrice(
+          const stockRes = await setOutletProductStock(
+            baseOrgId,
+            currentOutletId,
+            inserted.id,
+            initialStock
+          );
+          const sellRes = await setOutletProductSellingPrice(
             baseOrgId,
             currentOutletId,
             inserted.id,
             outletSellingPrice
           );
-          await setOutletProductCostPrice(
+          const costRes = await setOutletProductCostPrice(
             baseOrgId,
             currentOutletId,
             inserted.id,
             outletCostPrice
           );
+          if (stockRes.error || sellRes.error || costRes.error) {
+            setError(
+              stockRes.error ||
+                sellRes.error ||
+                costRes.error ||
+                "Gagal simpan stok/harga outlet"
+            );
+            setSubmitLoading(false);
+            return;
+          }
         }
         if (form.default_unit_id) {
           await supabase.from("product_units").insert({

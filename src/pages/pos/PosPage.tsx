@@ -630,18 +630,16 @@ export function PosPage() {
       );
       if (custPrice) return custPrice.price;
     }
-    // 2. Harga umum per satuan (tanpa variant)
-    if (!hasVariant) {
+    // 2. Harga outlet (product.selling_price sudah di-merge dari outlet_product_stock).
+    //    Jangan pakai product_prices org-wide agar harga cabang tidak tertimpa harga pusat.
+    //    Grosir tetap boleh pakai product_prices bila ada.
+    if (!hasVariant && pt !== "retail") {
       const unitPrice = prices.find(
         (pr) => pr.unit_id === unitId && !pr.customer_id && pr.price_type === pt
       );
       if (unitPrice) return unitPrice.price;
-      const retailPrice = prices.find(
-        (pr) => pr.unit_id === unitId && !pr.customer_id && pr.price_type === "retail"
-      );
-      if (retailPrice) return retailPrice.price;
     }
-    // 3. Fallback: effective selling (dasar) atau dikalikan konversi satuan
+    // 3. Fallback: harga jual outlet/efektif × konversi satuan
     const metaUnits = meta?.units ?? [];
     const unitRow = metaUnits.find((u) => u.unit_id === unitId);
     if (unitRow?.is_base) return effectiveSelling;

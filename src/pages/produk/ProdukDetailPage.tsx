@@ -4,6 +4,7 @@ import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
 import { formatIdr, parsePriceIdr } from "@/lib/utils";
 import { printLabelNiimbot } from "@/lib/niimbot";
+import { applyOutletProductToProducts, fetchOutletProductMap } from "@/lib/outletStock";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -55,7 +56,7 @@ const PRICE_TYPES = [
 
 export function ProdukDetailPage() {
   const { orgId, id: productId } = useParams<{ orgId: string; id: string }>();
-  const { orgId: ctxOrgId } = useOrg();
+  const { orgId: ctxOrgId, currentOutletId, currentOutlet } = useOrg();
   const navigate = useNavigate();
   const baseOrgId = orgId ?? ctxOrgId;
 
@@ -123,6 +124,11 @@ export function ProdukDetailPage() {
       supabase.from("customers").select("id, name").eq("organization_id", baseOrgId).order("name"),
     ]);
     setProduct(prodRes.data ?? null);
+    if (prodRes.data && currentOutletId) {
+      const outletMap = await fetchOutletProductMap(currentOutletId, [productId]);
+      const merged = applyOutletProductToProducts([prodRes.data], outletMap)[0];
+      setProduct(merged);
+    }
     setProductUnits((puRes.data as unknown as ProductUnitRow[]) ?? []);
     setProductPrices((ppRes.data as unknown as ProductPriceRow[]) ?? []);
     setProductIngredients((piRes.data as unknown as ProductIngredientRow[]) ?? []);
@@ -151,7 +157,7 @@ export function ProdukDetailPage() {
 
   useEffect(() => {
     fetchData();
-  }, [baseOrgId, productId]);
+  }, [baseOrgId, productId, currentOutletId]);
 
   async function addUnit() {
     if (!productId || !unitForm.unit_id) return;
