@@ -60,6 +60,7 @@ import { KreditSyariahDetailPage } from "@/pages/kredit-syariah/KreditSyariahDet
 import { KaryawanPage } from "@/pages/crud/KaryawanPage";
 import { KategoriKaryawanPage } from "@/pages/crud/KategoriKaryawanPage";
 import { DaftarPelanggan } from "@/pages/DaftarPelanggan";
+import { DaftarKaryawan } from "@/pages/DaftarKaryawan";
 import { AdminLayout } from "@/pages/admin/AdminLayout";
 import { AdminDashboardPage } from "@/pages/admin/AdminDashboardPage";
 import { AdminOrganisationsPage } from "@/pages/admin/AdminOrganisationsPage";
@@ -174,6 +175,7 @@ export default function App() {
         <Route path="/shop/:token" element={<ShopPage />} />
         <Route path="/katalog/:orgId" element={<CatalogPage />} />
         <Route path="/daftar-pelanggan" element={<DaftarPelanggan />} />
+        <Route path="/daftar-karyawan" element={<DaftarKaryawan />} />
         <Route path="/order/:token" element={<OrderDetailPage />} />
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<AdminDashboardPage />} />

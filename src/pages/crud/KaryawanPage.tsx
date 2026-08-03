@@ -19,6 +19,8 @@ export function KaryawanPage() {
   const [data, setData] = useState<EmployeeRow[]>([]);
   const [roles, setRoles] = useState<EmployeeRole[]>([]);
   const [loading, setLoading] = useState(true);
+  const [memberLimit, setMemberLimit] = useState(2);
+  const [memberCount, setMemberCount] = useState(0);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<EmployeeRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<EmployeeRow | null>(null);
@@ -35,11 +37,15 @@ export function KaryawanPage() {
   });
   const [submitLoading, setSubmitLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [inviteEmployee, setInviteEmployee] = useState<EmployeeRow | null>(null);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   async function fetchData() {
     if (!orgId) return;
     setLoading(true);
-    const [empRes, rolesRes] = await Promise.all([
+    const [empRes, rolesRes, membersRes, subRes] = await Promise.all([
       supabase
         .from("employees")
         .select("*, outlets(name), employee_roles(name)")
@@ -50,6 +56,15 @@ export function KaryawanPage() {
         .select("*")
         .eq("organization_id", orgId)
         .order("name"),
+      supabase
+        .from("organization_members")
+        .select("*", { count: "exact", head: true })
+        .eq("organization_id", orgId),
+      supabase
+        .from("subscriptions")
+        .select("subscription_plans(member_limit)")
+        .eq("organization_id", orgId)
+        .maybeSingle(),
     ]);
     setLoading(false);
     if (empRes.error) {
@@ -58,6 +73,11 @@ export function KaryawanPage() {
     }
     setData((empRes.data ?? []) as EmployeeRow[]);
     setRoles((rolesRes.data ?? []) as EmployeeRole[]);
+    setMemberCount(membersRes.count ?? 0);
+    const plan = (
+      subRes.data as { subscription_plans?: { member_limit: number } | null } | null
+    )?.subscription_plans;
+    setMemberLimit(plan?.member_limit ?? 2);
     if (rolesRes.error) setError(rolesRes.error.message);
     else setError(null);
   }
@@ -148,6 +168,62 @@ export function KaryawanPage() {
     }
   }
 
+  function generateInviteToken(): string {
+    const arr = new Uint8Array(24);
+    crypto.getRandomValues(arr);
+    return btoa(String.fromCharCode(...arr))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=/g, "");
+  }
+
+  async function handleTambahAkun(row: EmployeeRow) {
+    if (!row.email?.trim()) {
+      setError("Isi email karyawan terlebih dahulu (edit karyawan) agar bisa mengundang akun.");
+      return;
+    }
+    if (!row.is_active) {
+      setError("Aktifkan karyawan terlebih dahulu sebelum membuat akun.");
+      return;
+    }
+    if (memberLimit < 999 && memberCount >= memberLimit) {
+      setError(
+        `Limit user organisasi tercapai (${memberLimit}). Upgrade paket untuk menambah akun.`
+      );
+      return;
+    }
+    setInviteLoading(true);
+    setError(null);
+    const token = generateInviteToken();
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+    const { error: err } = await supabase
+      .from("employees")
+      .update({
+        invite_token: token,
+        invite_expires_at: expiresAt.toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", row.id);
+    setInviteLoading(false);
+    if (err) {
+      setError(err.message);
+      return;
+    }
+    const link = `${window.location.origin}/daftar-karyawan?token=${token}`;
+    setInviteLink(link);
+    setInviteEmployee(row);
+    fetchData();
+  }
+
+  function copyInviteLink() {
+    if (inviteLink) {
+      navigator.clipboard.writeText(inviteLink);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    }
+  }
+
   const outletList = outlets ?? [];
   const columns: Column<EmployeeRow>[] = [
     { key: "name", header: "Nama" },
@@ -164,6 +240,28 @@ export function KaryawanPage() {
       render: (row) => (row.employee_roles as { name: string } | null)?.name ?? "—",
     },
     {
+      key: "akun",
+      header: "Akun",
+      render: (row) => {
+        if (row.user_id) {
+          return <span className="text-sm text-emerald-600">Terhubung</span>;
+        }
+        if (!row.email?.trim() || !row.is_active) {
+          return <span className="text-sm text-[var(--muted-foreground)]">—</span>;
+        }
+        return (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleTambahAkun(row)}
+            disabled={inviteLoading}
+          >
+            {inviteLoading ? "..." : "Tambah akun"}
+          </Button>
+        );
+      },
+    },
+    {
       key: "is_active",
       header: "Aktif",
       render: (row) => (row.is_active ? "Ya" : "Tidak"),
@@ -174,7 +272,10 @@ export function KaryawanPage() {
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-semibold text-[var(--foreground)]">Karyawan</h2>
-        <p className="text-[var(--muted-foreground)]">Kelola data karyawan dan kategori akses.</p>
+        <p className="text-[var(--muted-foreground)]">
+          Kelola data karyawan dan akun login. User: {memberCount}
+          {memberLimit < 999 ? ` / ${memberLimit}` : ""}.
+        </p>
       </div>
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -225,6 +326,9 @@ export function KaryawanPage() {
                 onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
                 placeholder="email@contoh.com"
               />
+              <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                Wajib diisi jika ingin membuat akun login.
+              </p>
             </div>
           </div>
           <div>
@@ -252,7 +356,9 @@ export function KaryawanPage() {
               </select>
             </div>
             <div>
-              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Kategori Karyawan</label>
+              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
+                Kategori Karyawan
+              </label>
               <select
                 className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)]"
                 value={form.employee_role_id}
@@ -306,6 +412,47 @@ export function KaryawanPage() {
         confirmLabel="Hapus"
         loading={deleteLoading}
       />
+
+      <Modal
+        open={!!inviteEmployee}
+        onClose={() => {
+          setInviteEmployee(null);
+          setInviteLink(null);
+        }}
+        title="Tambah akun karyawan"
+        size="md"
+      >
+        {inviteEmployee && (
+          <div className="space-y-4">
+            <p className="text-sm text-[var(--muted-foreground)]">
+              Bagikan link berikut ke <strong>{inviteEmployee.name}</strong> ({inviteEmployee.email}).
+              Karyawan buka link, daftar dengan email tersebut, lalu bisa login ke aplikasi.
+            </p>
+            {inviteLink && (
+              <div className="flex gap-2">
+                <Input readOnly value={inviteLink} className="font-mono text-xs" />
+                <Button variant="outline" size="sm" onClick={copyInviteLink}>
+                  {linkCopied ? "Tersalin!" : "Salin"}
+                </Button>
+              </div>
+            )}
+            <p className="text-xs text-[var(--muted-foreground)]">
+              Link berlaku 7 hari. Jika kadaluarsa, klik &quot;Tambah akun&quot; lagi untuk buat link
+              baru.
+            </p>
+            <div className="flex justify-end">
+              <Button
+                onClick={() => {
+                  setInviteEmployee(null);
+                  setInviteLink(null);
+                }}
+              >
+                Tutup
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

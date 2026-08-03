@@ -390,6 +390,8 @@ export interface Employee {
   address: string | null;
   notes: string | null;
   user_id: string | null;
+  invite_token: string | null;
+  invite_expires_at: string | null;
   employee_role_id: string | null;
   is_active: boolean;
   created_at: string;
