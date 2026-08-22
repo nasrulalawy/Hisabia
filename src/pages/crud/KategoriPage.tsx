@@ -8,9 +8,12 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import type { MenuCategory } from "@/lib/database.types";
+import { useFeaturePermission } from "@/hooks/useFeaturePermission";
+import { featureActionDeniedMessage } from "@/lib/featurePermissions";
 
 export function KategoriPage() {
   const { orgId, currentOutletId } = useOrg();
+  const perm = useFeaturePermission("kategori");
   const [data, setData] = useState<MenuCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -63,6 +66,11 @@ export function KategoriPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const denied = featureActionDeniedMessage(editing ? "update" : "create", perm);
+    if (denied) {
+      setError(denied);
+      return;
+    }
     if (!form.name.trim() || !orgId) return;
     setSubmitLoading(true);
     setError(null);
@@ -97,6 +105,12 @@ export function KategoriPage() {
 
   async function handleDelete() {
     if (!deleteTarget) return;
+    const denied = featureActionDeniedMessage("delete", perm);
+    if (denied) {
+      setError(denied);
+      setDeleteTarget(null);
+      return;
+    }
     setDeleteLoading(true);
     const { error: err } = await supabase.from("menu_categories").delete().eq("id", deleteTarget.id);
     setDeleteLoading(false);
@@ -130,6 +144,7 @@ export function KategoriPage() {
         data={data}
         loading={loading}
         emptyMessage="Belum ada kategori. Klik Tambah untuk menambah."
+        featureKey="kategori"
         onAdd={openAdd}
         addLabel="Tambah Kategori"
         onEdit={openEdit}

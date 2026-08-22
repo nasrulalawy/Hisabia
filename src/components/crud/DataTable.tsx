@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/Button";
+import { useFeaturePermission } from "@/hooks/useFeaturePermission";
+import type { OutletFeatureKey } from "@/lib/outletFeatures";
 
 export interface Column<T> {
   key: string;
@@ -18,6 +20,8 @@ interface DataTableProps<T extends { id: string }> {
   addDisabled?: boolean;
   onEdit?: (row: T) => void;
   onDelete?: (row: T) => void;
+  /** Jika diisi, tombol Tambah/Edit/Hapus disembunyikan sesuai hak akses karyawan & outlet. */
+  featureKey?: OutletFeatureKey;
   keyExtractor?: (row: T) => string;
 }
 
@@ -31,13 +35,21 @@ export function DataTable<T extends { id: string }>({
   addDisabled = false,
   onEdit,
   onDelete,
+  featureKey,
   keyExtractor = (r) => r.id,
 }: DataTableProps<T>) {
+  const perm = useFeaturePermission(featureKey);
+  const showAdd = onAdd && (!featureKey || perm.can_create);
+  const showEdit = onEdit && (!featureKey || perm.can_update);
+  const showDelete = onDelete && (!featureKey || perm.can_delete);
+
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--background)] overflow-hidden">
-      {onAdd && (
+      {showAdd && (
         <div className="flex justify-end border-b border-[var(--border)] p-3 sm:p-4">
-          <Button onClick={onAdd} disabled={addDisabled} className="min-h-10 touch-manipulation">{addLabel}</Button>
+          <Button onClick={onAdd} disabled={addDisabled} className="min-h-10 touch-manipulation">
+            {addLabel}
+          </Button>
         </div>
       )}
       <div className="overflow-x-auto">
@@ -59,7 +71,7 @@ export function DataTable<T extends { id: string }>({
                     {col.header}
                   </th>
                 ))}
-                {(onEdit || onDelete) && (
+                {(showEdit || showDelete) && (
                   <th className="w-20 whitespace-nowrap px-2 py-2 font-medium text-[var(--foreground)] sm:w-24 sm:px-4 sm:py-3">Aksi</th>
                 )}
               </tr>
@@ -77,15 +89,15 @@ export function DataTable<T extends { id: string }>({
                         : String((row as Record<string, unknown>)[col.key] ?? "-")}
                     </td>
                   ))}
-                  {(onEdit || onDelete) && (
+                  {(showEdit || showDelete) && (
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
-                        {onEdit && (
+                        {showEdit && onEdit && (
                           <Button variant="outline" size="sm" onClick={() => onEdit(row)}>
                             Edit
                           </Button>
                         )}
-                        {onDelete && (
+                        {showDelete && onDelete && (
                           <Button
                             variant="outline"
                             size="sm"

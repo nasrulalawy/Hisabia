@@ -146,6 +146,7 @@ export function SupplierPage() {
         data={data}
         loading={loading}
         emptyMessage="Belum ada supplier. Klik Tambah untuk menambah."
+        featureKey="supplier"
         onAdd={openAdd}
         addLabel="Tambah Supplier"
         onEdit={openEdit}

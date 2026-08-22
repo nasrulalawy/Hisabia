@@ -11,6 +11,8 @@ import type { Product } from "@/lib/database.types";
 import type { Warehouse } from "@/lib/database.types";
 import type { StockMovement } from "@/lib/database.types";
 import { applyOutletStockToProducts, fetchOutletStockMap, setOutletProductStock } from "@/lib/outletStock";
+import { useFeaturePermission } from "@/hooks/useFeaturePermission";
+import { featureActionDeniedMessage } from "@/lib/featurePermissions";
 
 interface ProductWithUnit extends Product {
   units?: { symbol: string } | null;
@@ -23,6 +25,7 @@ interface MovementWithRelations extends StockMovement {
 
 export function StokPage() {
   const { orgId, currentOutletId } = useOrg();
+  const perm = useFeaturePermission("stok");
   const [products, setProducts] = useState<ProductWithUnit[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [movements, setMovements] = useState<MovementWithRelations[]>([]);
@@ -82,6 +85,14 @@ export function StokPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const denied = featureActionDeniedMessage(
+      form.type === "adjust" ? "update" : "create",
+      perm
+    );
+    if (denied) {
+      setError(denied);
+      return;
+    }
     if (!orgId || !currentOutletId || !form.warehouse_id || !form.product_id || !form.quantity) return;
     const qty = parseFloat(form.quantity);
     if (isNaN(qty)) {
@@ -234,9 +245,11 @@ export function StokPage() {
             Kelola stok produk dan mutasi stok (masuk/keluar/adjust).
           </p>
         </div>
-        <Button onClick={openAdd} disabled={warehouses.length === 0}>
-          Mutasi Stok
-        </Button>
+        {(perm.can_create || perm.can_update) && (
+          <Button onClick={openAdd} disabled={warehouses.length === 0}>
+            Mutasi Stok
+          </Button>
+        )}
       </div>
 
       {warehouses.length === 0 && (

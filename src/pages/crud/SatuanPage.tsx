@@ -117,6 +117,7 @@ export function SatuanPage() {
         data={data}
         loading={loading}
         emptyMessage="Belum ada satuan. Klik Tambah untuk menambah."
+        featureKey="satuan"
         onAdd={openAdd}
         addLabel="Tambah Satuan"
         onEdit={openEdit}

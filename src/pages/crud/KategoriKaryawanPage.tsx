@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
 import { DataTable, type Column } from "@/components/crud/DataTable";
@@ -6,20 +6,38 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { OUTLET_FEATURE_LIST } from "@/lib/outletFeatures";
+import { OUTLET_FEATURE_LIST, type OutletFeatureKey } from "@/lib/outletFeatures";
+import {
+  getFeatureFieldDefinitions,
+  normalizeVisibleFieldsFromDb,
+  visibleFieldsForDb,
+} from "@/lib/featureFields";
 import type { EmployeeRole, EmployeeRoleFeaturePermission } from "@/lib/database.types";
 
-type PermState = Record<
-  string,
-  { can_create: boolean; can_read: boolean; can_update: boolean; can_delete: boolean }
->;
+type FeaturePerm = {
+  can_create: boolean;
+  can_read: boolean;
+  can_update: boolean;
+  can_delete: boolean;
+  /** UI: daftar field_key yang dicentang (semua = unrestricted) */
+  visible_fields: string[];
+};
 
-const DEFAULT_CRUD = {
+type PermState = Record<string, FeaturePerm>;
+
+const DEFAULT_CRUD: Omit<FeaturePerm, "visible_fields"> = {
   can_create: true,
   can_read: true,
   can_update: true,
   can_delete: true,
 };
+
+function defaultPermForFeature(featureKey: OutletFeatureKey): FeaturePerm {
+  return {
+    ...DEFAULT_CRUD,
+    visible_fields: getFeatureFieldDefinitions(featureKey).map((f) => f.key),
+  };
+}
 
 export function KategoriKaryawanPage() {
   const { orgId } = useOrg();
@@ -31,6 +49,7 @@ export function KategoriKaryawanPage() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [form, setForm] = useState({ name: "", description: "" });
   const [permissions, setPermissions] = useState<PermState>({});
+  const [expandedFeature, setExpandedFeature] = useState<string | null>(null);
   const [permLoading, setPermLoading] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,7 +79,7 @@ export function KategoriKaryawanPage() {
     setPermLoading(true);
     const { data: rows, error: err } = await supabase
       .from("employee_role_feature_permissions")
-      .select("feature_key, can_create, can_read, can_update, can_delete")
+      .select("feature_key, can_create, can_read, can_update, can_delete, visible_fields")
       .eq("employee_role_id", roleId);
     setPermLoading(false);
     if (err) return;
@@ -73,18 +92,24 @@ export function KategoriKaryawanPage() {
             can_read: row.can_read,
             can_update: row.can_update,
             can_delete: row.can_delete,
+            visible_fields: normalizeVisibleFieldsFromDb(
+              f.key,
+              row.visible_fields as string[] | null
+            ),
           }
-        : { ...DEFAULT_CRUD };
+        : defaultPermForFeature(f.key);
     });
     setPermissions(perm);
+    setExpandedFeature(null);
   }
 
   function openAdd() {
     setEditing(null);
     setForm({ name: "", description: "" });
     const perm: PermState = {};
-    OUTLET_FEATURE_LIST.forEach((f) => (perm[f.key] = { ...DEFAULT_CRUD }));
+    OUTLET_FEATURE_LIST.forEach((f) => (perm[f.key] = defaultPermForFeature(f.key)));
     setPermissions(perm);
+    setExpandedFeature(null);
     setError(null);
     setModalOpen(true);
   }
@@ -104,8 +129,55 @@ export function KategoriKaryawanPage() {
   ) {
     setPermissions((p) => ({
       ...p,
-      [featureKey]: { ...(p[featureKey] ?? DEFAULT_CRUD), [field]: value },
+      [featureKey]: { ...(p[featureKey] ?? defaultPermForFeature(featureKey as OutletFeatureKey)), [field]: value },
     }));
+  }
+
+  function toggleVisibleField(featureKey: OutletFeatureKey, fieldKey: string, checked: boolean) {
+    setPermissions((p) => {
+      const current = p[featureKey] ?? defaultPermForFeature(featureKey);
+      const allKeys = getFeatureFieldDefinitions(featureKey).map((f) => f.key);
+      let next = checked
+        ? [...new Set([...current.visible_fields, fieldKey])]
+        : current.visible_fields.filter((k) => k !== fieldKey);
+      if (fieldKey === "name" && !checked) {
+        next = next.filter((k) => k !== "name");
+        if (!next.includes("name")) next = ["name", ...next];
+      }
+      if (next.length === 0 && allKeys.includes("name")) next = ["name"];
+      return { ...p, [featureKey]: { ...current, visible_fields: next } };
+    });
+  }
+
+  function setAllVisibleFields(featureKey: OutletFeatureKey, checked: boolean) {
+    setPermissions((p) => {
+      const current = p[featureKey] ?? defaultPermForFeature(featureKey);
+      const allKeys = getFeatureFieldDefinitions(featureKey).map((f) => f.key);
+      return {
+        ...p,
+        [featureKey]: {
+          ...current,
+          visible_fields: checked ? allKeys : allKeys.includes("name") ? ["name"] : [],
+        },
+      };
+    });
+  }
+
+  async function savePermissionRows(roleId: string, now: string) {
+    const rows = OUTLET_FEATURE_LIST.map((f) => {
+      const p = permissions[f.key] ?? defaultPermForFeature(f.key);
+      return {
+        employee_role_id: roleId,
+        feature_key: f.key,
+        can_create: p.can_create,
+        can_read: p.can_read,
+        can_update: p.can_update,
+        can_delete: p.can_delete,
+        visible_fields: visibleFieldsForDb(f.key, p.visible_fields),
+        updated_at: now,
+      };
+    });
+    return supabase.from("employee_role_feature_permissions").insert(rows);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -134,19 +206,7 @@ export function KategoriKaryawanPage() {
         setSubmitLoading(false);
         return;
       }
-      const rows = OUTLET_FEATURE_LIST.map((f) => {
-        const p = permissions[f.key] ?? DEFAULT_CRUD;
-        return {
-          employee_role_id: roleId,
-          feature_key: f.key,
-          can_create: p.can_create,
-          can_read: p.can_read,
-          can_update: p.can_update,
-          can_delete: p.can_delete,
-          updated_at: now,
-        };
-      });
-      const { error: insErr } = await supabase.from("employee_role_feature_permissions").insert(rows);
+      const { error: insErr } = await savePermissionRows(roleId, now);
       if (insErr) setError(insErr.message);
       else {
         setModalOpen(false);
@@ -169,19 +229,7 @@ export function KategoriKaryawanPage() {
         return;
       }
       const roleId = (newRole as { id: string }).id;
-      const rows = OUTLET_FEATURE_LIST.map((f) => {
-        const p = permissions[f.key] ?? DEFAULT_CRUD;
-        return {
-          employee_role_id: roleId,
-          feature_key: f.key,
-          can_create: p.can_create,
-          can_read: p.can_read,
-          can_update: p.can_update,
-          can_delete: p.can_delete,
-          updated_at: now,
-        };
-      });
-      const { error: insErr } = await supabase.from("employee_role_feature_permissions").insert(rows);
+      const { error: insErr } = await savePermissionRows(roleId, now);
       if (insErr) setError(insErr.message);
       else {
         setModalOpen(false);
@@ -212,7 +260,9 @@ export function KategoriKaryawanPage() {
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-semibold text-[var(--foreground)]">Kategori Karyawan</h2>
-        <p className="text-[var(--muted-foreground)]">Atur kategori (role) dan hak akses CRUD per fitur.</p>
+        <p className="text-[var(--muted-foreground)]">
+          Atur kategori (role), hak akses CRUD, dan field yang boleh dilihat karyawan per fitur.
+        </p>
       </div>
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -224,6 +274,7 @@ export function KategoriKaryawanPage() {
         data={data}
         loading={loading}
         emptyMessage="Belum ada kategori. Klik Tambah untuk menambah."
+        featureKey="kategori_karyawan"
         onAdd={openAdd}
         addLabel="Tambah Kategori"
         onEdit={openEdit}
@@ -257,12 +308,12 @@ export function KategoriKaryawanPage() {
           <div>
             <h3 className="mb-2 text-sm font-medium text-[var(--foreground)]">Hak akses per fitur</h3>
             <p className="mb-3 text-xs text-[var(--muted-foreground)]">
-              Centang Create/Read/Update/Delete per fitur. Jika Read tidak dicentang, menu fitur disembunyikan.
+              Centang Create/Read/Update/Delete per fitur. Klik nama fitur untuk atur field yang boleh dilihat karyawan.
             </p>
             {permLoading ? (
               <p className="text-sm text-[var(--muted-foreground)]">Memuat…</p>
             ) : (
-              <div className="max-h-80 overflow-auto rounded border border-[var(--border)]">
+              <div className="max-h-96 overflow-auto rounded border border-[var(--border)]">
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-[var(--muted)]">
                     <tr>
@@ -275,43 +326,109 @@ export function KategoriKaryawanPage() {
                   </thead>
                   <tbody>
                     {OUTLET_FEATURE_LIST.map((f) => {
-                      const p = permissions[f.key] ?? DEFAULT_CRUD;
+                      const p = permissions[f.key] ?? defaultPermForFeature(f.key);
+                      const fieldDefs = getFeatureFieldDefinitions(f.key);
+                      const isExpanded = expandedFeature === f.key;
+                      const allFieldsChecked =
+                        fieldDefs.length > 0 &&
+                        fieldDefs.every((fd) => p.visible_fields.includes(fd.key));
                       return (
-                        <tr key={f.key} className="border-b border-[var(--border)] last:border-0">
-                          <td className="px-3 py-1.5">{f.label}</td>
-                          <td className="px-2 py-1.5 text-center">
-                            <input
-                              type="checkbox"
-                              checked={p.can_create}
-                              onChange={(e) => setPerm(f.key, "can_create", e.target.checked)}
-                              className="h-4 w-4 rounded border-[var(--border)]"
-                            />
-                          </td>
-                          <td className="px-2 py-1.5 text-center">
-                            <input
-                              type="checkbox"
-                              checked={p.can_read}
-                              onChange={(e) => setPerm(f.key, "can_read", e.target.checked)}
-                              className="h-4 w-4 rounded border-[var(--border)]"
-                            />
-                          </td>
-                          <td className="px-2 py-1.5 text-center">
-                            <input
-                              type="checkbox"
-                              checked={p.can_update}
-                              onChange={(e) => setPerm(f.key, "can_update", e.target.checked)}
-                              className="h-4 w-4 rounded border-[var(--border)]"
-                            />
-                          </td>
-                          <td className="px-2 py-1.5 text-center">
-                            <input
-                              type="checkbox"
-                              checked={p.can_delete}
-                              onChange={(e) => setPerm(f.key, "can_delete", e.target.checked)}
-                              className="h-4 w-4 rounded border-[var(--border)]"
-                            />
-                          </td>
-                        </tr>
+                        <Fragment key={f.key}>
+                          <tr key={f.key} className="border-b border-[var(--border)]">
+                            <td className="px-3 py-1.5">
+                              <button
+                                type="button"
+                                className={`text-left ${fieldDefs.length ? "text-[var(--primary)] hover:underline" : ""}`}
+                                onClick={() =>
+                                  fieldDefs.length
+                                    ? setExpandedFeature(isExpanded ? null : f.key)
+                                    : undefined
+                                }
+                              >
+                                {f.label}
+                                {fieldDefs.length > 0 && (
+                                  <span className="ml-1 text-xs text-[var(--muted-foreground)]">
+                                    ({p.visible_fields.length}/{fieldDefs.length} field)
+                                  </span>
+                                )}
+                              </button>
+                            </td>
+                            <td className="px-2 py-1.5 text-center">
+                              <input
+                                type="checkbox"
+                                checked={p.can_create}
+                                onChange={(e) => setPerm(f.key, "can_create", e.target.checked)}
+                                className="h-4 w-4 rounded border-[var(--border)]"
+                              />
+                            </td>
+                            <td className="px-2 py-1.5 text-center">
+                              <input
+                                type="checkbox"
+                                checked={p.can_read}
+                                onChange={(e) => setPerm(f.key, "can_read", e.target.checked)}
+                                className="h-4 w-4 rounded border-[var(--border)]"
+                              />
+                            </td>
+                            <td className="px-2 py-1.5 text-center">
+                              <input
+                                type="checkbox"
+                                checked={p.can_update}
+                                onChange={(e) => setPerm(f.key, "can_update", e.target.checked)}
+                                className="h-4 w-4 rounded border-[var(--border)]"
+                              />
+                            </td>
+                            <td className="px-2 py-1.5 text-center">
+                              <input
+                                type="checkbox"
+                                checked={p.can_delete}
+                                onChange={(e) => setPerm(f.key, "can_delete", e.target.checked)}
+                                className="h-4 w-4 rounded border-[var(--border)]"
+                              />
+                            </td>
+                          </tr>
+                          {isExpanded && fieldDefs.length > 0 && (
+                          <tr key={`${f.key}-fields`} className="border-b border-[var(--border)] bg-[var(--muted)]/30">
+                              <td colSpan={5} className="px-4 py-3">
+                                <div className="mb-2 flex items-center justify-between">
+                                  <span className="text-xs font-medium text-[var(--foreground)]">
+                                    Field yang boleh dilihat — {f.label}
+                                  </span>
+                                  <label className="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]">
+                                    <input
+                                      type="checkbox"
+                                      checked={allFieldsChecked}
+                                      onChange={(e) => setAllVisibleFields(f.key, e.target.checked)}
+                                      className="h-3.5 w-3.5 rounded border-[var(--border)]"
+                                    />
+                                    Semua field
+                                  </label>
+                                </div>
+                                <div className="flex flex-wrap gap-x-4 gap-y-2">
+                                  {fieldDefs.map((fd) => (
+                                    <label
+                                      key={fd.key}
+                                      className="flex items-center gap-1.5 text-xs text-[var(--foreground)]"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={p.visible_fields.includes(fd.key)}
+                                        disabled={fd.key === "name"}
+                                        onChange={(e) =>
+                                          toggleVisibleField(f.key, fd.key, e.target.checked)
+                                        }
+                                        className="h-3.5 w-3.5 rounded border-[var(--border)]"
+                                      />
+                                      {fd.label}
+                                      {fd.key === "name" && (
+                                        <span className="text-[var(--muted-foreground)]">(wajib)</span>
+                                      )}
+                                    </label>
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
                       );
                     })}
                   </tbody>

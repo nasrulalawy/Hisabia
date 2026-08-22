@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
 import { formatDate, formatIdr } from "@/lib/utils";
@@ -7,6 +7,8 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { FieldGate } from "@/components/permissions/FieldGate";
+import { useFeatureFieldVisibility } from "@/hooks/useFeatureFieldVisibility";
 import type {
   Customer,
   KreditSyariahAkad,
@@ -15,6 +17,7 @@ import type {
 
 export function PelangganPage() {
   const { orgId } = useOrg();
+  const { filterByField } = useFeatureFieldVisibility("pelanggan");
   const [data, setData] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -225,33 +228,37 @@ export function PelangganPage() {
     }
   }
 
-  const columns: Column<Customer>[] = [
-    { key: "name", header: "Nama" },
-    { key: "phone", header: "Telepon" },
-    { key: "email", header: "Email" },
-    {
-      key: "akun",
-      header: "Akun",
-      render: (row) => {
-        if (row.user_id) {
-          return <span className="text-sm text-emerald-600">Terhubung</span>;
-        }
-        if (!row.email?.trim()) {
-          return <span className="text-sm text-[var(--muted-foreground)]">—</span>;
-        }
-        return (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleTambahAkun(row)}
-            disabled={inviteLoading}
-          >
-            {inviteLoading ? "..." : "Tambah akun"}
-          </Button>
-        );
-      },
-    },
-  ];
+  const columns: Column<Customer>[] = useMemo(
+    () =>
+      filterByField([
+        { key: "name", header: "Nama" },
+        { key: "phone", header: "Telepon" },
+        { key: "email", header: "Email" },
+        {
+          key: "account",
+          header: "Akun",
+          render: (row) => {
+            if (row.user_id) {
+              return <span className="text-sm text-emerald-600">Terhubung</span>;
+            }
+            if (!row.email?.trim()) {
+              return <span className="text-sm text-[var(--muted-foreground)]">—</span>;
+            }
+            return (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleTambahAkun(row)}
+                disabled={inviteLoading}
+              >
+                {inviteLoading ? "..." : "Tambah akun"}
+              </Button>
+            );
+          },
+        },
+      ]),
+    [filterByField, inviteLoading]
+  );
 
   return (
     <div className="space-y-6">
@@ -276,6 +283,7 @@ export function PelangganPage() {
         data={data}
         loading={loading}
         emptyMessage="Belum ada pelanggan. Klik Tambah untuk menambah."
+        featureKey="pelanggan"
         onAdd={openAdd}
         addLabel="Tambah Pelanggan"
         onEdit={openEdit}
@@ -288,46 +296,55 @@ export function PelangganPage() {
         size="lg"
       >
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Nama *</label>
-            <Input
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              placeholder="Nama pelanggan"
-              required
-              autoFocus
-            />
-          </div>
+          <FieldGate feature="pelanggan" field="name">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Nama *</label>
+              <Input
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="Nama pelanggan"
+                required
+                autoFocus
+              />
+            </div>
+          </FieldGate>
           <div className="grid gap-4 sm:grid-cols-2">
+            <FieldGate feature="pelanggan" field="phone">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Telepon</label>
+                <Input
+                  value={form.phone}
+                  onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                  placeholder="08xxx"
+                />
+              </div>
+            </FieldGate>
+            <FieldGate feature="pelanggan" field="email">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Email</label>
+                <Input
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                  placeholder="email@example.com"
+                />
+              </div>
+            </FieldGate>
+          </div>
+          <FieldGate feature="pelanggan" field="address">
             <div>
-              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Telepon</label>
-              <Input
-                value={form.phone}
-                onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-                placeholder="08xxx"
+              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Alamat</label>
+              <textarea
+                value={form.address}
+                onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+                placeholder="Alamat lengkap"
+                rows={2}
+                className="h-20 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
               />
             </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Email</label>
-              <Input
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                placeholder="email@example.com"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Alamat</label>
-            <textarea
-              value={form.address}
-              onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
-              placeholder="Alamat lengkap"
-              rows={2}
-              className="h-20 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-            />
-          </div>
-          {editing && (
+          </FieldGate>
+          <FieldGate feature="pelanggan" field="kredit_syariah">
+            {editing && (
             <div className="mt-4 border-t border-[var(--border)] pt-4">
               <h3 className="mb-2 text-sm font-semibold text-[var(--foreground)]">
                 Kredit Syariah (Cicilan)
@@ -406,7 +423,9 @@ export function PelangganPage() {
                 </>
               )}
             </div>
-          )}
+            )}
+          </FieldGate>
+          <FieldGate feature="pelanggan" field="notes">
           <div>
             <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Catatan</label>
             <textarea
@@ -417,6 +436,7 @@ export function PelangganPage() {
               className="h-20 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
             />
           </div>
+          </FieldGate>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>
               Batal

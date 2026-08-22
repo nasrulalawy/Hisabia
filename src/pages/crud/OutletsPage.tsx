@@ -176,6 +176,7 @@ export function OutletsPage() {
         data={data}
         loading={loading}
         emptyMessage="Belum ada outlet. Klik Tambah untuk menambah."
+        featureKey="outlets"
         onAdd={openAdd}
         addLabel="Tambah Outlet"
         addDisabled={outletLimit < 999 && data.length >= outletLimit}

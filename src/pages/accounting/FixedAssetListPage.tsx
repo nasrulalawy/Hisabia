@@ -122,6 +122,7 @@ export function FixedAssetListPage() {
         data={data}
         loading={loading}
         emptyMessage="Belum ada aset tetap. Klik Tambah Aset untuk menambah."
+        featureKey="aset_tetap"
         onAdd={() => navigate("tambah")}
         addLabel="Tambah Aset"
         onEdit={(row) => navigate(`${row.id}/edit`)}

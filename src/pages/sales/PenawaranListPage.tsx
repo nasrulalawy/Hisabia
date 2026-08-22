@@ -99,6 +99,7 @@ export function PenawaranListPage() {
         data={data}
         loading={loading}
         emptyMessage="Belum ada penawaran. Klik Tambah untuk membuat."
+        featureKey="penawaran"
         onAdd={() => navigate("tambah")}
         addLabel="Tambah Penawaran"
         onEdit={(row) => navigate(`${row.id}/edit`)}

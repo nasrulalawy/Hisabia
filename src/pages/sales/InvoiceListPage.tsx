@@ -100,6 +100,7 @@ export function InvoiceListPage() {
         data={data}
         loading={loading}
         emptyMessage="Belum ada invoice. Klik Tambah untuk membuat."
+        featureKey="invoice_penjualan"
         onAdd={() => navigate("tambah")}
         addLabel="Tambah Invoice"
         onEdit={(row) => navigate(`${row.id}/edit`)}

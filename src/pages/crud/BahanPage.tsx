@@ -223,6 +223,7 @@ export function BahanPage() {
         data={data}
         loading={loading}
         emptyMessage="Belum ada bahan. Klik Tambah untuk menambah."
+        featureKey="bahan"
         onAdd={openAdd}
         addLabel="Tambah Bahan"
         onEdit={openEdit}

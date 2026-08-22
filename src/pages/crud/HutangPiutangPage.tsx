@@ -227,6 +227,7 @@ function PiutangSection() {
         data={data}
         loading={loading}
         emptyMessage="Belum ada piutang."
+        featureKey="hutang_piutang"
         onAdd={openAdd}
         addLabel="Tambah Piutang"
         onEdit={openEdit}
@@ -509,6 +510,7 @@ function HutangSection() {
         data={data}
         loading={loading}
         emptyMessage="Belum ada hutang."
+        featureKey="hutang_piutang"
         onAdd={openAdd}
         addLabel="Tambah Hutang"
         onEdit={openEdit}

@@ -94,6 +94,7 @@ export function PengirimanListPage() {
         data={data}
         loading={loading}
         emptyMessage="Belum ada pengiriman. Klik Tambah untuk membuat."
+        featureKey="pengiriman"
         onAdd={() => navigate("tambah")}
         addLabel="Tambah Pengiriman"
         onEdit={(row) => navigate(`${row.id}/edit`)}

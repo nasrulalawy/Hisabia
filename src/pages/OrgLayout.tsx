@@ -39,7 +39,7 @@ export function OrgLayout() {
   const [organizationFeatureGrants, setOrganizationFeatureGrants] = useState<string[]>([]);
   const [currentEmployee, setCurrentEmployee] = useState<Employee | null>(null);
   const [employeeFeaturePermissions, setEmployeeFeaturePermissions] = useState<
-    Record<string, { can_create: boolean; can_read: boolean; can_update: boolean; can_delete: boolean }> | null
+    Record<string, import("@/lib/employeeFeatures").EmployeeFeaturePermission> | null
   >(null);
   const [loading, setLoading] = useState(true);
   const [trialExpired, setTrialExpired] = useState(false);
@@ -128,7 +128,7 @@ export function OrgLayout() {
         if (emp.employee_role_id) {
           const { data: empPermRows } = await supabase
             .from("employee_role_feature_permissions")
-            .select("employee_role_id, feature_key, can_create, can_read, can_update, can_delete")
+            .select("employee_role_id, feature_key, can_create, can_read, can_update, can_delete, visible_fields")
             .eq("employee_role_id", emp.employee_role_id);
           setEmployeeFeaturePermissions(
             normalizeEmployeePermissions(

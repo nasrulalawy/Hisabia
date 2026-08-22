@@ -8,6 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { ProductPhotoScanModal } from "@/components/product/ProductPhotoScanModal";
 import { parsePriceIdr } from "@/lib/utils";
 import { fetchOutletProductMap, setOutletProductStock, setOutletProductSellingPrice, setOutletProductCostPrice } from "@/lib/outletStock";
+import { useFeaturePermission } from "@/hooks/useFeaturePermission";
+import { featureActionDeniedMessage } from "@/lib/featurePermissions";
+import { FieldGate } from "@/components/permissions/FieldGate";
 
 export function ProdukFormPage() {
   const { orgId, id: productId } = useParams<{ orgId: string; id?: string }>();
@@ -15,6 +18,7 @@ export function ProdukFormPage() {
   const navigate = useNavigate();
   const isEdit = !!productId;
   const baseOrgId = orgId ?? ctxOrgId;
+  const perm = useFeaturePermission("produk");
 
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
   const [units, setUnits] = useState<{ id: string; name: string; symbol: string }[]>([]);
@@ -157,6 +161,11 @@ export function ProdukFormPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const denied = featureActionDeniedMessage(isEdit ? "update" : "create", perm);
+    if (denied) {
+      setError(denied);
+      return;
+    }
     if (!form.name.trim() || !baseOrgId) return;
     setSubmitLoading(true);
     setError(null);
@@ -308,6 +317,15 @@ export function ProdukFormPage() {
     );
   }
 
+  const accessDenied = featureActionDeniedMessage(isEdit ? "update" : "create", perm);
+  if (accessDenied) {
+    return (
+      <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        {accessDenied}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -339,27 +357,31 @@ export function ProdukFormPage() {
             <CardTitle>Data Produk</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Nama *</label>
-              <Input
-                value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="Nama produk"
-                required
-                autoFocus
-              />
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Deskripsi</label>
-              <textarea
-                value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                placeholder="Deskripsi produk"
-                rows={2}
-                className="h-20 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-              />
-            </div>
-            <div>
+            <FieldGate feature="produk" field="name">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Nama *</label>
+                <Input
+                  value={form.name}
+                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                  placeholder="Nama produk"
+                  required
+                  autoFocus
+                />
+              </div>
+            </FieldGate>
+            <FieldGate feature="produk" field="description">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Deskripsi</label>
+                <textarea
+                  value={form.description}
+                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                  placeholder="Deskripsi produk"
+                  rows={2}
+                  className="h-20 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                />
+              </div>
+            </FieldGate>
+            <FieldGate feature="produk" field="image">
               <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Gambar produk (maks. 1, 2 MB)</label>
               <div className="flex flex-wrap items-start gap-4">
                 {(form.image_url || imageFile) && (
@@ -394,87 +416,97 @@ export function ProdukFormPage() {
                   <p className="text-xs text-[var(--muted-foreground)]">JPEG, PNG, WebP atau GIF. Maksimal 2 MB.</p>
                 </div>
               </div>
-            </div>
+            </FieldGate>
             <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Kategori</label>
-                <select
-                  value={form.category_id}
-                  onChange={(e) => setForm((f) => ({ ...f, category_id: e.target.value }))}
-                  className="h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-                >
-                  <option value="">-- Pilih Kategori --</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Supplier</label>
-                <select
-                  value={form.supplier_id}
-                  onChange={(e) => setForm((f) => ({ ...f, supplier_id: e.target.value }))}
-                  className="h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-                >
-                  <option value="">-- Pilih Supplier --</option>
-                  {suppliers.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <FieldGate feature="produk" field="category">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Kategori</label>
+                  <select
+                    value={form.category_id}
+                    onChange={(e) => setForm((f) => ({ ...f, category_id: e.target.value }))}
+                    className="h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                  >
+                    <option value="">-- Pilih Kategori --</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </FieldGate>
+              <FieldGate feature="produk" field="supplier">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Supplier</label>
+                  <select
+                    value={form.supplier_id}
+                    onChange={(e) => setForm((f) => ({ ...f, supplier_id: e.target.value }))}
+                    className="h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                  >
+                    <option value="">-- Pilih Supplier --</option>
+                    {suppliers.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </FieldGate>
             </div>
             <div className="grid gap-4 sm:grid-cols-3">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Satuan Default</label>
-                <select
-                  value={form.default_unit_id}
-                  onChange={(e) => setForm((f) => ({ ...f, default_unit_id: e.target.value }))}
-                  className="h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-                >
-                  <option value="">-- Pilih Satuan --</option>
-                  {units.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name} ({u.symbol})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
-                  HPP / Harga Modal{currentOutlet ? ` (${currentOutlet.name})` : ""}
-                </label>
-                <Input
-                  type="text"
-                  inputMode="decimal"
-                  value={form.cost_price}
-                  onChange={(e) => setForm((f) => ({ ...f, cost_price: e.target.value }))}
-                  placeholder="0 atau 10.000"
-                />
-                <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                  HPP untuk outlet aktif. Cabang bisa punya HPP berbeda.
-                </p>
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
-                  Harga Jual{currentOutlet ? ` (${currentOutlet.name})` : ""}
-                </label>
-                <Input
-                  type="text"
-                  inputMode="decimal"
-                  value={form.selling_price}
-                  onChange={(e) => setForm((f) => ({ ...f, selling_price: e.target.value }))}
-                  placeholder="0 atau 10.000"
-                />
-                <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                  Harga untuk outlet yang sedang aktif. Outlet lain bisa punya harga berbeda.
-                </p>
-              </div>
+              <FieldGate feature="produk" field="unit">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Satuan Default</label>
+                  <select
+                    value={form.default_unit_id}
+                    onChange={(e) => setForm((f) => ({ ...f, default_unit_id: e.target.value }))}
+                    className="h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                  >
+                    <option value="">-- Pilih Satuan --</option>
+                    {units.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name} ({u.symbol})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </FieldGate>
+              <FieldGate feature="produk" field="cost_price">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
+                    HPP / Harga Modal{currentOutlet ? ` (${currentOutlet.name})` : ""}
+                  </label>
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    value={form.cost_price}
+                    onChange={(e) => setForm((f) => ({ ...f, cost_price: e.target.value }))}
+                    placeholder="0 atau 10.000"
+                  />
+                  <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                    HPP untuk outlet aktif. Cabang bisa punya HPP berbeda.
+                  </p>
+                </div>
+              </FieldGate>
+              <FieldGate feature="produk" field="selling_price">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
+                    Harga Jual{currentOutlet ? ` (${currentOutlet.name})` : ""}
+                  </label>
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    value={form.selling_price}
+                    onChange={(e) => setForm((f) => ({ ...f, selling_price: e.target.value }))}
+                    placeholder="0 atau 10.000"
+                  />
+                  <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                    Harga untuk outlet yang sedang aktif. Outlet lain bisa punya harga berbeda.
+                  </p>
+                </div>
+              </FieldGate>
             </div>
-            <div>
+            <FieldGate feature="produk" field="barcode">
               <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Barcode / SKU (bisa banyak)</label>
               <p className="mb-2 text-xs text-[var(--muted-foreground)]">
                 Scan salah satu barcode di POS → produk ini. Tambah beberapa jika satu produk punya banyak kode (kemasan berbeda, dll).
@@ -511,40 +543,44 @@ export function ProdukFormPage() {
                   + Tambah barcode
                 </Button>
               </div>
-            </div>
+            </FieldGate>
             <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Stok Awal</label>
-                <Input
-                  type="text"
-                  inputMode="decimal"
-                  value={form.stock}
-                  onChange={(e) => setForm((f) => ({ ...f, stock: e.target.value }))}
-                  placeholder="0 atau 10.000"
-                  disabled={isEdit}
-                />
-                {isEdit && (
-                  <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                    Stok per outlet. Ubah lewat Stok Toko di outlet yang aktif.
-                  </p>
-                )}
-                {!isEdit && (
-                  <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                    Stok awal untuk outlet yang sedang aktif.
-                  </p>
-                )}
-              </div>
-              <div className="flex items-end pb-2">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={form.is_available}
-                    onChange={(e) => setForm((f) => ({ ...f, is_available: e.target.checked }))}
-                    className="h-4 w-4 rounded border-[var(--border)]"
+              <FieldGate feature="produk" field="stock">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Stok Awal</label>
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    value={form.stock}
+                    onChange={(e) => setForm((f) => ({ ...f, stock: e.target.value }))}
+                    placeholder="0 atau 10.000"
+                    disabled={isEdit}
                   />
-                  <span className="text-sm font-medium text-[var(--foreground)]">Produk aktif</span>
-                </label>
-              </div>
+                  {isEdit && (
+                    <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                      Stok per outlet. Ubah lewat Stok Toko di outlet yang aktif.
+                    </p>
+                  )}
+                  {!isEdit && (
+                    <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                      Stok awal untuk outlet yang sedang aktif.
+                    </p>
+                  )}
+                </div>
+              </FieldGate>
+              <FieldGate feature="produk" field="is_available">
+                <div className="flex items-end pb-2">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={form.is_available}
+                      onChange={(e) => setForm((f) => ({ ...f, is_available: e.target.checked }))}
+                      className="h-4 w-4 rounded border-[var(--border)]"
+                    />
+                    <span className="text-sm font-medium text-[var(--foreground)]">Produk aktif</span>
+                  </label>
+                </div>
+              </FieldGate>
             </div>
             <div className="flex justify-end gap-2 pt-4">
               <Button type="button" variant="outline" onClick={() => navigate(`/org/${baseOrgId}/produk`)}>

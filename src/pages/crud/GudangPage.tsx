@@ -119,6 +119,7 @@ export function GudangPage() {
         data={data}
         loading={loading}
         emptyMessage="Belum ada gudang. Klik Tambah untuk menambah."
+        featureKey="gudang"
         onAdd={openAdd}
         addLabel="Tambah Gudang"
         onEdit={openEdit}

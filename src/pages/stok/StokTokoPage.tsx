@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { applyOutletProductToProducts, fetchOutletProductMap, setOutletProductStock, setOutletProductCostPrice } from "@/lib/outletStock";
+import { useFeaturePermission } from "@/hooks/useFeaturePermission";
+import { featureActionDeniedMessage } from "@/lib/featurePermissions";
 
 interface ProductWithUnit {
   id: string;
@@ -32,6 +34,7 @@ interface StockMovementRow {
 
 export function StokTokoPage() {
   const { orgId, currentOutletId } = useOrg();
+  const perm = useFeaturePermission("stok_toko");
   const [products, setProducts] = useState<ProductWithUnit[]>([]);
   const [movements, setMovements] = useState<StockMovementRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,6 +94,14 @@ export function StokTokoPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const denied = featureActionDeniedMessage(
+      modalType === "masuk" ? "create" : "update",
+      perm
+    );
+    if (denied) {
+      setError(denied);
+      return;
+    }
     if (!orgId || !currentOutletId || !form.product_id) return;
     const qty = parseFloat(form.quantity);
     if (isNaN(qty) || (modalType === "masuk" && qty <= 0)) {
@@ -252,12 +263,16 @@ export function StokTokoPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => openModal("masuk")}>
-            Stok Masuk
-          </Button>
-          <Button variant="outline" onClick={() => openModal("adjust")}>
-            Penyesuaian
-          </Button>
+          {perm.can_create && (
+            <Button variant="outline" onClick={() => openModal("masuk")}>
+              Stok Masuk
+            </Button>
+          )}
+          {perm.can_update && (
+            <Button variant="outline" onClick={() => openModal("adjust")}>
+              Penyesuaian
+            </Button>
+          )}
         </div>
       </div>
 

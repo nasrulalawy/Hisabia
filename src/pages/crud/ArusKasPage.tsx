@@ -178,6 +178,7 @@ export function ArusKasPage() {
         data={data}
         loading={loading}
         emptyMessage="Belum ada transaksi. Klik Tambah untuk menambah."
+        featureKey="arus_kas"
         onAdd={openAdd}
         addLabel="Tambah Transaksi"
         onEdit={openEdit}

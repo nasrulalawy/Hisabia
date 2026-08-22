@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { formatIdr, parsePriceIdr } from "@/lib/utils";
 import { printLabelNiimbot } from "@/lib/niimbot";
 import { applyOutletProductToProducts, fetchOutletProductMap } from "@/lib/outletStock";
+import { useFeaturePermission } from "@/hooks/useFeaturePermission";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -59,6 +60,7 @@ export function ProdukDetailPage() {
   const { orgId: ctxOrgId, currentOutletId } = useOrg();
   const navigate = useNavigate();
   const baseOrgId = orgId ?? ctxOrgId;
+  const perm = useFeaturePermission("produk");
 
   const [product, setProduct] = useState<{
     id: string;
@@ -321,9 +323,11 @@ export function ProdukDetailPage() {
           <p className="text-[var(--muted-foreground)]">Multi satuan & multi harga</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => navigate(`/org/${baseOrgId}/produk/${productId as string}/edit`)}>
-            Edit Data Dasar
-          </Button>
+          {perm.can_update && (
+            <Button variant="outline" onClick={() => navigate(`/org/${baseOrgId}/produk/${productId as string}/edit`)}>
+              Edit Data Dasar
+            </Button>
+          )}
           <Button
             variant="outline"
             disabled={niimbotPrinting || !("bluetooth" in navigator && navigator.bluetooth)}

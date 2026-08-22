@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
 import { DataTable, type Column } from "@/components/crud/DataTable";
@@ -6,6 +6,8 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { FieldGate } from "@/components/permissions/FieldGate";
+import { useFeatureFieldVisibility } from "@/hooks/useFeatureFieldVisibility";
 import type { Employee, EmployeeRole } from "@/lib/database.types";
 import type { Outlet } from "@/lib/database.types";
 
@@ -16,6 +18,7 @@ type EmployeeRow = Employee & {
 
 export function KaryawanPage() {
   const { orgId, outlets } = useOrg();
+  const { filterByField } = useFeatureFieldVisibility("karyawan");
   const [data, setData] = useState<EmployeeRow[]>([]);
   const [roles, setRoles] = useState<EmployeeRole[]>([]);
   const [loading, setLoading] = useState(true);
@@ -225,48 +228,52 @@ export function KaryawanPage() {
   }
 
   const outletList = outlets ?? [];
-  const columns: Column<EmployeeRow>[] = [
-    { key: "name", header: "Nama" },
-    { key: "phone", header: "Telepon" },
-    { key: "email", header: "Email" },
-    {
-      key: "outlets",
-      header: "Outlet",
-      render: (row) => (row.outlets as { name: string } | null)?.name ?? "—",
-    },
-    {
-      key: "employee_roles",
-      header: "Kategori",
-      render: (row) => (row.employee_roles as { name: string } | null)?.name ?? "—",
-    },
-    {
-      key: "akun",
-      header: "Akun",
-      render: (row) => {
-        if (row.user_id) {
-          return <span className="text-sm text-emerald-600">Terhubung</span>;
-        }
-        if (!row.email?.trim() || !row.is_active) {
-          return <span className="text-sm text-[var(--muted-foreground)]">—</span>;
-        }
-        return (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleTambahAkun(row)}
-            disabled={inviteLoading}
-          >
-            {inviteLoading ? "..." : "Tambah akun"}
-          </Button>
-        );
-      },
-    },
-    {
-      key: "is_active",
-      header: "Aktif",
-      render: (row) => (row.is_active ? "Ya" : "Tidak"),
-    },
-  ];
+  const columns: Column<EmployeeRow>[] = useMemo(
+    () =>
+      filterByField([
+        { key: "name", header: "Nama" },
+        { key: "phone", header: "Telepon" },
+        { key: "email", header: "Email" },
+        {
+          key: "outlet",
+          header: "Outlet",
+          render: (row) => (row.outlets as { name: string } | null)?.name ?? "—",
+        },
+        {
+          key: "role",
+          header: "Kategori",
+          render: (row) => (row.employee_roles as { name: string } | null)?.name ?? "—",
+        },
+        {
+          key: "account",
+          header: "Akun",
+          render: (row) => {
+            if (row.user_id) {
+              return <span className="text-sm text-emerald-600">Terhubung</span>;
+            }
+            if (!row.email?.trim() || !row.is_active) {
+              return <span className="text-sm text-[var(--muted-foreground)]">—</span>;
+            }
+            return (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleTambahAkun(row)}
+                disabled={inviteLoading}
+              >
+                {inviteLoading ? "..." : "Tambah akun"}
+              </Button>
+            );
+          },
+        },
+        {
+          key: "is_active",
+          header: "Aktif",
+          render: (row) => (row.is_active ? "Ya" : "Tidak"),
+        },
+      ]),
+    [filterByField, inviteLoading]
+  );
 
   return (
     <div className="space-y-6">
@@ -287,6 +294,7 @@ export function KaryawanPage() {
         data={data}
         loading={loading}
         emptyMessage="Belum ada karyawan. Klik Tambah untuk menambah."
+        featureKey="karyawan"
         onAdd={openAdd}
         addLabel="Tambah Karyawan"
         onEdit={openEdit}
@@ -299,100 +307,116 @@ export function KaryawanPage() {
         size="lg"
       >
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Nama *</label>
-            <Input
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              placeholder="Nama lengkap"
-              required
-              autoFocus
-            />
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <FieldGate feature="karyawan" field="name">
             <div>
-              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Telepon</label>
+              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Nama *</label>
               <Input
-                value={form.phone}
-                onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-                placeholder="08..."
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="Nama lengkap"
+                required
+                autoFocus
               />
             </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Email</label>
-              <Input
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                placeholder="email@contoh.com"
-              />
-              <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                Wajib diisi jika ingin membuat akun login.
-              </p>
-            </div>
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Alamat</label>
-            <Input
-              value={form.address}
-              onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
-              placeholder="Alamat"
-            />
-          </div>
+          </FieldGate>
           <div className="grid gap-4 sm:grid-cols-2">
+            <FieldGate feature="karyawan" field="phone">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Telepon</label>
+                <Input
+                  value={form.phone}
+                  onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                  placeholder="08..."
+                />
+              </div>
+            </FieldGate>
+            <FieldGate feature="karyawan" field="email">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Email</label>
+                <Input
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                  placeholder="email@contoh.com"
+                />
+                <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                  Wajib diisi jika ingin membuat akun login.
+                </p>
+              </div>
+            </FieldGate>
+          </div>
+          <FieldGate feature="karyawan" field="address">
             <div>
-              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Outlet</label>
-              <select
-                className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)]"
-                value={form.outlet_id}
-                onChange={(e) => setForm((f) => ({ ...f, outlet_id: e.target.value }))}
-              >
-                <option value="">— Semua outlet —</option>
-                {outletList.map((o: Outlet) => (
-                  <option key={o.id} value={o.id}>
-                    {o.name}
-                  </option>
-                ))}
-              </select>
+              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Alamat</label>
+              <Input
+                value={form.address}
+                onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+                placeholder="Alamat"
+              />
             </div>
+          </FieldGate>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FieldGate feature="karyawan" field="outlet">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Outlet</label>
+                <select
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)]"
+                  value={form.outlet_id}
+                  onChange={(e) => setForm((f) => ({ ...f, outlet_id: e.target.value }))}
+                >
+                  <option value="">— Semua outlet —</option>
+                  {outletList.map((o: Outlet) => (
+                    <option key={o.id} value={o.id}>
+                      {o.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </FieldGate>
+            <FieldGate feature="karyawan" field="role">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
+                  Kategori Karyawan
+                </label>
+                <select
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)]"
+                  value={form.employee_role_id}
+                  onChange={(e) => setForm((f) => ({ ...f, employee_role_id: e.target.value }))}
+                >
+                  <option value="">— Pilih kategori —</option>
+                  {roles.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </FieldGate>
+          </div>
+          <FieldGate feature="karyawan" field="notes">
             <div>
-              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
-                Kategori Karyawan
+              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Catatan</label>
+              <Input
+                value={form.notes}
+                onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+                placeholder="Catatan internal"
+              />
+            </div>
+          </FieldGate>
+          <FieldGate feature="karyawan" field="is_active">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="is_active"
+                checked={form.is_active}
+                onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))}
+                className="h-4 w-4 rounded border-[var(--border)]"
+              />
+              <label htmlFor="is_active" className="text-sm text-[var(--foreground)]">
+                Karyawan aktif
               </label>
-              <select
-                className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)]"
-                value={form.employee_role_id}
-                onChange={(e) => setForm((f) => ({ ...f, employee_role_id: e.target.value }))}
-              >
-                <option value="">— Pilih kategori —</option>
-                {roles.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
             </div>
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Catatan</label>
-            <Input
-              value={form.notes}
-              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-              placeholder="Catatan internal"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="is_active"
-              checked={form.is_active}
-              onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))}
-              className="h-4 w-4 rounded border-[var(--border)]"
-            />
-            <label htmlFor="is_active" className="text-sm text-[var(--foreground)]">
-              Karyawan aktif
-            </label>
-          </div>
+          </FieldGate>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>
               Batal
