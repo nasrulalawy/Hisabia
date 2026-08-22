@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import type { OutletType } from "@/lib/database.types";
+import { resolveAuthDestination } from "@/lib/authRedirect";
 
 const BUSINESS_CATEGORY_OPTIONS: { value: OutletType; label: string }[] = [
   { value: "mart", label: "Mart / Retail (toko, warung, minimarket)" },
@@ -29,24 +30,9 @@ export function Onboarding() {
         navigate("/login", { replace: true });
         return;
       }
-      const { data: orgData } = await supabase
-        .from("organization_members")
-        .select("organization_id")
-        .eq("user_id", user.id)
-        .limit(1)
-        .single();
-      if (orgData?.organization_id) {
-        navigate(`/org/${orgData.organization_id}/dashboard`, { replace: true });
-        return;
-      }
-      const { data: customerData } = await supabase
-        .from("customers")
-        .select("organization_id")
-        .eq("user_id", user.id)
-        .limit(1)
-        .maybeSingle();
-      if (customerData?.organization_id) {
-        navigate(`/katalog/${customerData.organization_id}`, { replace: true });
+      const dest = await resolveAuthDestination(supabase, user.id);
+      if (dest !== "/onboarding") {
+        navigate(dest, { replace: true });
       }
     })();
   }, [navigate]);

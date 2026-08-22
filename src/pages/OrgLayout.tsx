@@ -6,6 +6,7 @@ import { Header } from "@/components/layout/Header";
 import { OrgProvider } from "@/contexts/OrgContext";
 import { normalizeOutletPermissions } from "@/lib/outletFeatures";
 import { normalizeEmployeePermissions } from "@/lib/employeeFeatures";
+import { userCanAccessOrg } from "@/lib/authRedirect";
 import type {
   Outlet as OutletType,
   Employee,
@@ -55,13 +56,8 @@ export function OrgLayout() {
       }
       setUser(u);
 
-      const { data: membership } = await supabase
-        .from("organization_members")
-        .select("role")
-        .eq("organization_id", orgId)
-        .eq("user_id", u.id)
-        .single();
-      if (!membership) {
+      const access = await userCanAccessOrg(supabase, u.id, orgId);
+      if (!access.allowed) {
         const { data: customerOrg } = await supabase
           .from("customers")
           .select("organization_id")
@@ -75,7 +71,7 @@ export function OrgLayout() {
         }
         return;
       }
-      setRole(roleLabels[membership.role] ?? membership.role);
+      setRole(roleLabels[access.role ?? "member"] ?? access.role ?? "Member");
 
       const { data: profileData } = await supabase
         .from("profiles")

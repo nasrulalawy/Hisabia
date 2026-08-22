@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { resolveAuthDestination } from "@/lib/authRedirect";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { PasswordInput } from "@/components/ui/PasswordInput";
@@ -26,7 +27,13 @@ export function Login() {
       setError(err.message);
       return;
     }
-    navigate(from, { replace: true });
+    const { data: { user: signedInUser } } = await supabase.auth.getUser();
+    if (signedInUser && (from === "/" || from === "/onboarding")) {
+      const dest = await resolveAuthDestination(supabase, signedInUser.id);
+      navigate(dest, { replace: true });
+    } else {
+      navigate(from, { replace: true });
+    }
   }
 
   return (

@@ -68,6 +68,7 @@ import { AdminOrganisationsPage } from "@/pages/admin/AdminOrganisationsPage";
 import { AdminPlansPage } from "@/pages/admin/AdminPlansPage";
 import { AdminOutletFeaturesPage } from "@/pages/admin/AdminOutletFeaturesPage";
 import { InstallPWA } from "@/components/InstallPWA";
+import { resolveAuthDestination } from "@/lib/authRedirect";
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<{ id: string } | null>(null);
@@ -105,27 +106,8 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
         setHomeRedirect("/admin");
         return;
       }
-      const { data: orgData } = await supabase
-        .from("organization_members")
-        .select("organization_id")
-        .eq("user_id", user.id)
-        .limit(1)
-        .maybeSingle();
-      if (orgData?.organization_id) {
-        setHomeRedirect(`/org/${orgData.organization_id}/dashboard`);
-        return;
-      }
-      const { data: customerData } = await supabase
-        .from("customers")
-        .select("organization_id")
-        .eq("user_id", user.id)
-        .limit(1)
-        .maybeSingle();
-      if (customerData?.organization_id) {
-        setHomeRedirect(`/katalog/${customerData.organization_id}`);
-        return;
-      }
-      setHomeRedirect("/onboarding");
+      const dest = await resolveAuthDestination(supabase, user.id);
+      setHomeRedirect(dest);
     })();
   }, [user, location.pathname]);
 
