@@ -7,6 +7,7 @@ import { Register } from "@/pages/Register";
 import { Onboarding } from "@/pages/Onboarding";
 import { Logout } from "@/pages/Logout";
 import { OrgLayout } from "@/pages/OrgLayout";
+import { OrgIndexRedirect } from "@/components/routing/OrgIndexRedirect";
 import { Dashboard } from "@/pages/dashboard/Dashboard";
 import { KategoriPage } from "@/pages/crud/KategoriPage";
 import { SatuanPage } from "@/pages/crud/SatuanPage";
@@ -184,7 +185,7 @@ export default function App() {
           <Route path="outlet-features" element={<AdminOutletFeaturesPage />} />
         </Route>
         <Route path="/org/:orgId" element={<OrgLayout />}>
-          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route index element={<OrgIndexRedirect />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="kategori" element={<KategoriPage />} />
           <Route path="produk" element={<ProdukListPage />} />

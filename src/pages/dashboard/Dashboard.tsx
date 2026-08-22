@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, Navigate, useParams } from "react-router-dom";
 import { useOrg } from "@/contexts/OrgContext";
 import { supabase } from "@/lib/supabase";
 import { formatIdr, formatIdrWhole, formatDate } from "@/lib/utils";
+import { canAccessNavHref } from "@/lib/outletFeatures";
+import { useOrgLandingHref } from "@/hooks/useOrgLandingPath";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import {
   BarChart,
@@ -32,8 +34,29 @@ interface CashFlowData {
 
 export function Dashboard() {
   const { orgId } = useParams<{ orgId: string }>();
-  const { orgId: ctxOrgId, currentOutletId, currentOutlet } = useOrg();
+  const {
+    orgId: ctxOrgId,
+    currentOutletId,
+    currentOutlet,
+    currentOutletType,
+    outletFeaturePermissions,
+    employeeFeaturePermissions,
+    organizationFeatureGrants,
+  } = useOrg();
   const baseOrgId = orgId ?? ctxOrgId;
+  const landingHref = useOrgLandingHref();
+
+  if (
+    !canAccessNavHref(
+      "dashboard",
+      currentOutletType,
+      outletFeaturePermissions,
+      employeeFeaturePermissions,
+      organizationFeatureGrants
+    )
+  ) {
+    return <Navigate to={`/org/${baseOrgId}/${landingHref}`} replace />;
+  }
 
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<"7" | "14" | "30">("7");

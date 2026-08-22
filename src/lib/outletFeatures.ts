@@ -3,6 +3,9 @@
  * Route/href sidebar dipetakan ke feature_key. Bila tidak ada baris permission = semua diizinkan.
  */
 
+import type { OutletType } from "@/lib/database.types";
+import type { EmployeeFeaturePermission } from "@/lib/employeeFeatures";
+
 export interface OutletFeaturePermission {
   can_create: boolean;
   can_read: boolean;
@@ -185,4 +188,96 @@ export function getFeaturePermission(
 ): OutletFeaturePermission {
   if (!permissions || !permissions[featureKey]) return DEFAULT_PERMISSION;
   return permissions[featureKey];
+}
+
+export interface NavLandingItem {
+  href: string;
+  outletTypes?: OutletType[];
+  requiredFeatureGrant?: string;
+}
+
+/** Urutan halaman default setelah keluar POS / buka /org/:id — pertama yang boleh diakses user. */
+export const ORG_LANDING_ROUTE_PRIORITY: NavLandingItem[] = [
+  { href: "dashboard" },
+  { href: "kategori", outletTypes: ["mart", "fnb", "barbershop"] },
+  { href: "produk" },
+  { href: "bahan", outletTypes: ["fnb"] },
+  { href: "satuan", outletTypes: ["mart", "fnb", "barbershop"] },
+  { href: "supplier" },
+  { href: "pelanggan", outletTypes: ["mart", "fnb", "barbershop"] },
+  { href: "pos" },
+  { href: "penawaran" },
+  { href: "invoice-penjualan" },
+  { href: "pengiriman" },
+  { href: "stok-toko" },
+  { href: "opname" },
+  { href: "dashboard-keuangan" },
+  { href: "arus-kas" },
+  { href: "hutang-piutang" },
+  { href: "kredit-syariah", outletTypes: ["mart"], requiredFeatureGrant: "kredit_syariah" },
+  { href: "aset-tetap" },
+  { href: "pembelian" },
+  { href: "stok" },
+  { href: "gudang" },
+  { href: "karyawan" },
+  { href: "kategori-karyawan" },
+  { href: "outlets" },
+  { href: "toko" },
+  { href: "integrasi" },
+  { href: "subscription" },
+];
+
+export function canAccessNavHref(
+  href: string,
+  outletType: OutletType,
+  outletPermissions: Record<string, OutletFeaturePermission> | null,
+  employeePermissions: Record<string, EmployeeFeaturePermission> | null,
+  organizationFeatureGrants: string[],
+  item?: NavLandingItem
+): boolean {
+  const navItem = item ?? ORG_LANDING_ROUTE_PRIORITY.find((r) => r.href === href);
+  if (navItem?.outletTypes && !navItem.outletTypes.includes(outletType)) return false;
+  if (navItem?.requiredFeatureGrant && !organizationFeatureGrants.includes(navItem.requiredFeatureGrant)) {
+    return false;
+  }
+  if (!canReadFeature(href, outletPermissions)) return false;
+  const key = ROUTE_TO_FEATURE_KEY[href];
+  if (key && employeePermissions) {
+    const empPerm = employeePermissions[key];
+    if (empPerm && !empPerm.can_read) return false;
+  }
+  return true;
+}
+
+export function getDefaultOrgLandingHref(
+  outletType: OutletType,
+  outletPermissions: Record<string, OutletFeaturePermission> | null,
+  employeePermissions: Record<string, EmployeeFeaturePermission> | null,
+  organizationFeatureGrants: string[]
+): string {
+  for (const item of ORG_LANDING_ROUTE_PRIORITY) {
+    if (
+      canAccessNavHref(
+        item.href,
+        outletType,
+        outletPermissions,
+        employeePermissions,
+        organizationFeatureGrants,
+        item
+      )
+    ) {
+      return item.href;
+    }
+  }
+  return "subscription";
+}
+
+export function getDefaultOrgLandingPath(
+  orgId: string,
+  outletType: OutletType,
+  outletPermissions: Record<string, OutletFeaturePermission> | null,
+  employeePermissions: Record<string, EmployeeFeaturePermission> | null,
+  organizationFeatureGrants: string[]
+): string {
+  return `/org/${orgId}/${getDefaultOrgLandingHref(outletType, outletPermissions, employeePermissions, organizationFeatureGrants)}`;
 }

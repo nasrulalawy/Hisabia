@@ -25,6 +25,7 @@ import {
 import { printLabelNiimbot } from "@/lib/niimbot";
 import { getPosLayout } from "@/lib/posLayout";
 import { applyOutletProductToProducts, fetchOutletProductMap, setOutletProductStock } from "@/lib/outletStock";
+import { useOrgLandingPath } from "@/hooks/useOrgLandingPath";
 
 interface ProductUnitRow {
   id: string;
@@ -125,6 +126,7 @@ export function PosPage() {
   const location = useLocation();
   const params = useParams<{ orgId: string }>();
   const navigate = useNavigate();
+  const landingPath = useOrgLandingPath();
   const isPosFullScreen = location.pathname === `/org/${params.orgId}/pos`;
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [products, setProducts] = useState<ProductWithCategory[]>([]);
@@ -265,7 +267,7 @@ export function PosPage() {
       }
       if (e.key === "F6") {
         e.preventDefault();
-        if (orgId) navigate(`/org/${orgId}/dashboard`);
+        if (orgId) navigate(landingPath);
         return;
       }
       if (e.key === "F9") {
@@ -1256,7 +1258,7 @@ export function PosPage() {
         {isPosFullScreen && (
           <div className="flex shrink-0 items-center justify-end border-b border-[var(--border)] bg-[var(--background)] px-3 py-2">
             <Link
-              to={`/org/${orgId}/dashboard`}
+              to={landingPath}
               onClick={(e) => {
                 if (cart.length === 0 && !selectedCustomerId && !notes.trim()) {
                   return;
@@ -1283,7 +1285,7 @@ export function PosPage() {
         {isPosFullScreen && (
           <div className="flex shrink-0 items-center justify-end border-b border-[var(--border)] bg-[var(--background)] px-3 py-2">
             <Link
-              to={`/org/${orgId}/dashboard`}
+              to={landingPath}
               onClick={(e) => {
                 if (cart.length === 0 && !selectedCustomerId && !notes.trim()) {
                   return;
@@ -1302,7 +1304,7 @@ export function PosPage() {
             POS hanya tersedia untuk outlet Mart, F&B, atau Barbershop.
           </p>
           <p className="text-center text-sm text-[var(--muted-foreground)]">
-            Ganti outlet di dashboard lalu buka POS lagi.
+            Ganti outlet lewat menu utama lalu buka POS lagi.
           </p>
         </div>
       </div>
@@ -1315,7 +1317,7 @@ export function PosPage() {
         {isPosFullScreen && (
           <div className="flex shrink-0 items-center justify-end border-b border-[var(--border)] bg-[var(--background)] px-3 py-2">
             <Link
-              to={`/org/${orgId}/dashboard`}
+              to={landingPath}
               onClick={(e) => {
                 if (cart.length === 0 && !selectedCustomerId && !notes.trim()) {
                   return;
@@ -1342,7 +1344,7 @@ export function PosPage() {
         {isPosFullScreen && (
           <div className="flex shrink-0 items-center justify-end border-b border-[var(--border)] bg-[var(--background)] px-3 py-2">
             <Link
-              to={`/org/${orgId}/dashboard`}
+              to={landingPath}
               className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium hover:bg-[var(--muted)]"
             >
               Tutup
@@ -1423,7 +1425,7 @@ export function PosPage() {
               Pending ({pendingDrafts.length})
             </Button>
             <Link
-              to={`/org/${orgId}/dashboard`}
+              to={landingPath}
               onClick={(e) => {
                 if (cart.length === 0 && !selectedCustomerId && !notes.trim()) {
                   return;
@@ -1619,7 +1621,7 @@ export function PosPage() {
           <Button variant="outline" size="sm" onClick={() => cart.length > 0 && (setCart([]), setSelectedCartIndex(null))} disabled={cart.length === 0}>
             [F12] Batal
           </Button>
-          <Link to={`/org/${orgId}/dashboard`} className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm hover:bg-[var(--muted)]">
+          <Link to={landingPath} className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm hover:bg-[var(--muted)]">
             [F6] Tutup
           </Link>
           <span className="text-xs text-[var(--muted-foreground)]">Ketik kode barang + Enter untuk tambah</span>
@@ -2596,7 +2598,7 @@ export function PosPage() {
             variant="outline"
             onClick={() => {
               setClosePosModalOpen(false);
-              navigate(`/org/${orgId}/dashboard`);
+              navigate(landingPath);
             }}
           >
             Keluar tanpa simpan
@@ -2606,7 +2608,7 @@ export function PosPage() {
             onClick={() => {
               savePendingDraft();
               setClosePosModalOpen(false);
-              navigate(`/org/${orgId}/dashboard`);
+              navigate(landingPath);
             }}
           >
             Simpan transaksi
