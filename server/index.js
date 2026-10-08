@@ -567,11 +567,33 @@ app.post("/api/katalog/:orgId/order", async (req, res) => {
       const product = productMap[it.product_id];
       if (!product) continue;
       const qtyBase = it.quantity * it.conversion_to_base;
+
+      if (outlet?.id) {
+        const { data: ops } = await admin
+          .from("outlet_product_stock")
+          .select("stock")
+          .eq("outlet_id", outlet.id)
+          .eq("product_id", it.product_id)
+          .maybeSingle();
+
+        const currentOutletStock = ops ? Number(ops.stock ?? 0) : Number(product.stock ?? 0);
+        const nextOutletStock = Math.max(0, currentOutletStock - qtyBase);
+
+        await admin.from("outlet_product_stock").upsert({
+          organization_id: orgId,
+          outlet_id: outlet.id,
+          product_id: it.product_id,
+          stock: nextOutletStock,
+          updated_at: new Date().toISOString(),
+        });
+      }
+
       const newStock = Math.max(0, Number(product.stock ?? 0) - qtyBase);
       await admin.from("products").update({ stock: newStock, updated_at: new Date().toISOString() }).eq("id", it.product_id);
       await admin.from("stock_movements").insert({
         organization_id: orgId,
         warehouse_id: null,
+        outlet_id: outlet?.id || null,
         product_id: it.product_id,
         type: "out",
         quantity: qtyBase,
@@ -755,11 +777,33 @@ app.post("/api/shop/:token/order", async (req, res) => {
     const product = productMap[it.product_id];
     if (!product) continue;
     const qtyBase = it.quantity * it.conversion_to_base;
+
+    if (outlet?.id) {
+      const { data: ops } = await admin
+        .from("outlet_product_stock")
+        .select("stock")
+        .eq("outlet_id", outlet.id)
+        .eq("product_id", it.product_id)
+        .maybeSingle();
+
+      const currentOutletStock = ops ? Number(ops.stock ?? 0) : Number(product.stock ?? 0);
+      const nextOutletStock = Math.max(0, currentOutletStock - qtyBase);
+
+      await admin.from("outlet_product_stock").upsert({
+        organization_id: orgId,
+        outlet_id: outlet.id,
+        product_id: it.product_id,
+        stock: nextOutletStock,
+        updated_at: new Date().toISOString(),
+      });
+    }
+
     const newStock = Math.max(0, Number(product.stock ?? 0) - qtyBase);
     await admin.from("products").update({ stock: newStock, updated_at: new Date().toISOString() }).eq("id", it.product_id);
     await admin.from("stock_movements").insert({
       organization_id: orgId,
       warehouse_id: null,
+      outlet_id: outlet?.id || null,
       product_id: it.product_id,
       type: "out",
       quantity: qtyBase,

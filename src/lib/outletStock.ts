@@ -101,6 +101,63 @@ export async function setOutletProductStock(
   return { error: error?.message ?? null };
 }
 
+/**
+ * Potong stok secara atomik di database untuk sekumpulan produk terjual.
+ * Mengelompokkan item per product_id, mencegah race condition dan stale state.
+ */
+export async function deductOutletProductStockBatch(
+  orgId: string,
+  outletId: string | null,
+  items: { product_id: string; quantity: number }[]
+): Promise<{ error: string | null }> {
+  if (items.length === 0) return { error: null };
+
+  // 1. Coba jalankan RPC atomik di database
+  const { data, error } = await supabase.rpc("deduct_outlet_product_stock_batch", {
+    p_org_id: orgId,
+    p_outlet_id: outletId,
+    p_items: items,
+  });
+
+  if (!error) {
+    const res = data as { error?: string; ok?: boolean } | null;
+    if (res?.error) return { error: res.error };
+    return { error: null };
+  }
+
+  // 2. Fallback jika migration RPC belum diaplikasikan di instance remote
+  console.warn("deduct_outlet_product_stock_batch RPC not available, using fallback:", error.message);
+
+  const totals = new Map<string, number>();
+  for (const it of items) {
+    totals.set(it.product_id, (totals.get(it.product_id) ?? 0) + it.quantity);
+  }
+
+  const pIds = Array.from(totals.keys());
+  if (outletId) {
+    const currentMap = await fetchOutletProductMap(outletId, pIds);
+    for (const [pId, qtyToDeduct] of totals) {
+      const current = currentMap[pId]?.stock ?? 0;
+      const nextStock = Math.max(0, current - qtyToDeduct);
+      const res = await setOutletProductStock(orgId, outletId, pId, nextStock);
+      if (res.error) return { error: res.error };
+    }
+  } else {
+    for (const [pId, qtyToDeduct] of totals) {
+      const { data: p } = await supabase.from("products").select("stock").eq("id", pId).single();
+      const current = Number(p?.stock ?? 0);
+      const nextStock = Math.max(0, current - qtyToDeduct);
+      const { error: updErr } = await supabase
+        .from("products")
+        .update({ stock: nextStock, updated_at: new Date().toISOString() })
+        .eq("id", pId);
+      if (updErr) return { error: updErr.message };
+    }
+  }
+
+  return { error: null };
+}
+
 /** Set harga jual untuk produk di outlet. */
 export async function setOutletProductSellingPrice(
   orgId: string,

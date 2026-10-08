@@ -24,7 +24,7 @@ import {
 } from "@/lib/receipt";
 import { printLabelNiimbot } from "@/lib/niimbot";
 import { getPosLayout } from "@/lib/posLayout";
-import { applyOutletProductToProducts, fetchOutletProductMap, setOutletProductStock } from "@/lib/outletStock";
+import { applyOutletProductToProducts, fetchOutletProductMap, deductOutletProductStockBatch } from "@/lib/outletStock";
 import { useOrgLandingPath } from "@/hooks/useOrgLandingPath";
 
 interface ProductUnitRow {
@@ -1072,19 +1072,30 @@ export function PosPage() {
       return;
     }
 
+    // Agregasikan qtyBase per produk untuk pemotongan stok & pencatatan mutasi
+    const qtyBaseByProduct = new Map<string, number>();
     for (const c of cart) {
-      const product = products.find((p) => p.id === c.productId);
-      if (!product) continue;
-      const qtyBase = c.qty * c.conversionToBase;
-      const newStock = Math.max(0, Number(product.stock ?? 0) - qtyBase);
-      if (currentOutletId) {
-        await setOutletProductStock(orgId, currentOutletId, c.productId, newStock);
-      } else {
-        await supabase
-          .from("products")
-          .update({ stock: newStock, updated_at: new Date().toISOString() })
-          .eq("id", c.productId);
-      }
+      const qtyBase = c.qty * (c.conversionToBase || 1);
+      qtyBaseByProduct.set(c.productId, (qtyBaseByProduct.get(c.productId) ?? 0) + qtyBase);
+    }
+
+    // 1. Potong stok produk secara atomik di database
+    const itemsToDeduct = Array.from(qtyBaseByProduct.entries()).map(([productId, quantity]) => ({
+      product_id: productId,
+      quantity,
+    }));
+    const { error: stockErr } = await deductOutletProductStockBatch(
+      orgId,
+      currentOutletId,
+      itemsToDeduct
+    );
+    if (stockErr) {
+      console.error("Gagal potong stok outlet:", stockErr);
+    }
+
+    // 2. Catat riwayat pergerakan stok (stock movements)
+    for (const c of cart) {
+      const qtyBase = c.qty * (c.conversionToBase || 1);
       await supabase.from("stock_movements").insert({
         organization_id: orgId,
         warehouse_id: null,
@@ -1221,6 +1232,20 @@ export function PosPage() {
       })),
     }).catch(() => {});
 
+    // Segera perbarui state produk di React secara optimistik agar transaksi berikutnya tidak membaca stale state
+    setProducts((prev) =>
+      prev.map((p) => {
+        const deducted = qtyBaseByProduct.get(p.id);
+        if (deducted == null) return p;
+        return {
+          ...p,
+          stock: Math.max(0, Number(p.stock ?? 0) - deducted),
+        };
+      })
+    );
+    // Sinkronkan data produk dari database di background
+    fetchProducts().catch((err) => console.error("Refresh POS products error:", err));
+
     setCart([]);
     setNotes("");
     setSelectedCustomerId(null);
@@ -1231,6 +1256,8 @@ export function PosPage() {
     setSuccessMsg(
       cashErr
         ? `Order #${order.id.slice(0, 8)} berhasil, tapi arus kas gagal: ${cashErr.message}`
+        : stockErr
+        ? `Order #${order.id.slice(0, 8)} berhasil! (Peringatan stok: ${stockErr})`
         : `Order #${order.id.slice(0, 8)} berhasil!`
     );
     setCheckoutLoading(false);

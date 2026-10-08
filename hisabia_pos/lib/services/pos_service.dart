@@ -227,28 +227,52 @@ class PosService {
     required String orderId,
     required List<CartItem> cart,
     required List<Product> products,
+    String? outletId,
   }) async {
     final orderShort = orderId.length > 8 ? orderId.substring(0, 8) : orderId;
 
+    // 1. Coba potong stok secara atomik di database
+    final itemsToDeduct = <Map<String, dynamic>>[];
     for (final c in cart) {
-      Product? product;
-      for (final p in products) {
-        if (p.id == c.productId) {
-          product = p;
-          break;
-        }
-      }
-      if (product == null) continue;
       final qtyBase = c.qty * c.conversionToBase;
-      final newStock = (product.stock - qtyBase).clamp(0.0, double.infinity);
-      await _client.from('products').update({
-        'stock': newStock,
-        'updated_at': DateTime.now().toIso8601String(),
-      }).eq('id', c.productId);
+      itemsToDeduct.add({
+        'product_id': c.productId,
+        'quantity': qtyBase,
+      });
+    }
 
+    try {
+      await _client.rpc('deduct_outlet_product_stock_batch', params: {
+        'p_org_id': orgId,
+        'p_outlet_id': outletId,
+        'p_items': itemsToDeduct,
+      });
+    } catch (_) {
+      for (final c in cart) {
+        Product? product;
+        for (final p in products) {
+          if (p.id == c.productId) {
+            product = p;
+            break;
+          }
+        }
+        if (product == null) continue;
+        final qtyBase = c.qty * c.conversionToBase;
+        final newStock = (product.stock - qtyBase).clamp(0.0, double.infinity);
+        await _client.from('products').update({
+          'stock': newStock,
+          'updated_at': DateTime.now().toIso8601String(),
+        }).eq('id', c.productId);
+      }
+    }
+
+    // 2. Catat riwayat mutasi stok
+    for (final c in cart) {
+      final qtyBase = c.qty * c.conversionToBase;
       await _client.from('stock_movements').insert({
         'organization_id': orgId,
         'warehouse_id': null,
+        'outlet_id': outletId,
         'product_id': c.productId,
         'type': 'out',
         'quantity': qtyBase,

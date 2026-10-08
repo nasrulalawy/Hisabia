@@ -367,6 +367,7 @@ class _PosScreenState extends State<PosScreen> {
         orderId: orderId,
         cart: _cart,
         products: _products,
+        outletId: outletId,
       );
       if (paymentMethod == 'cash' && !debtFull) {
         await PosService.insertCashFlow(orgId, outletId, orderId, total);
@@ -389,6 +390,7 @@ class _PosScreenState extends State<PosScreen> {
         _cart.clear();
         _selectedCustomerId = null;
       });
+      _loadData();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Transaksi berhasil #${orderId.substring(0, 8)}')),
       );
